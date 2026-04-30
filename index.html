@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RadioTaxi Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config={theme:{extend:{fontFamily:{digital:['Orbitron','monospace'],ui:['Rajdhani','sans-serif']}}}}
+    </script>
+    <style>
+        :root{--bg:#080808;--card:#111111;--surface:#1a1a1a;--border:#2a2a2a;--accent:#F59E0B;--accent-dim:#B45309;--accent-glow:rgba(245,158,11,0.3);--accent2:#06B6D4;--text:#E5E5E5;--muted:#666;--danger:#EF4444;--success:#22C55E}
+        .day-mode{--bg:#EAEAEA;--card:#FFFFFF;--surface:#F0F0F0;--border:#CCC;--accent:#D97706;--accent-dim:#92400E;--accent-glow:rgba(217,119,6,0.15);--accent2:#0891B2;--text:#1A1A1A;--muted:#888;--danger:#DC2626;--success:#16A34A}
+        *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+        body{font-family:'Rajdhani',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh;height:100dvh;touch-action:manipulation}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+        .digital-glow{text-shadow:0 0 10px var(--accent-glow),0 0 30px var(--accent-glow)}
+        .day-mode .digital-glow{text-shadow:none}
+        input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer}
+        input[type=range]::-webkit-slider-track{height:6px;background:var(--border);border-radius:3px}
+        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:22px;height:22px;border-radius:50%;background:var(--accent);margin-top:-8px;box-shadow:0 0 8px var(--accent-glow)}
+        input[type=range]::-moz-range-track{height:6px;background:var(--border);border-radius:3px}
+        input[type=range]::-moz-range-thumb{width:22px;height:22px;border-radius:50%;background:var(--accent);border:none}
+        .tab-btn{transition:all .3s;position:relative}.tab-btn.active{color:var(--accent)}
+        .tab-btn.active::after{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:40px;height:3px;background:var(--accent);border-radius:0 0 3px 3px;box-shadow:0 0 10px var(--accent-glow)}
+        .preset-btn{transition:all .2s}.preset-btn:active{transform:scale(.95)}
+        .preset-btn.active-preset{background:var(--accent)!important;color:#000!important;box-shadow:0 0 15px var(--accent-glow)}
+        @keyframes pulseGlow{0%,100%{box-shadow:0 0 5px var(--accent-glow)}50%{box-shadow:0 0 20px var(--accent-glow),0 0 40px var(--accent-glow)}}.pulse-glow{animation:pulseGlow 2s ease-in-out infinite}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}.fade-in{animation:fadeIn .3s ease-out}
+        #map-container{height:100%;width:100%;border-radius:12px;overflow:hidden}
+        .leaflet-control-zoom{border:none!important}.leaflet-control-zoom a{background:var(--card)!important;color:var(--text)!important;border:1px solid var(--border)!important;width:36px!important;height:36px!important;line-height:36px!important;font-size:18px!important}
+        .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:var(--card);border:1px solid var(--border);padding:12px 24px;border-radius:8px;z-index:10000;transition:transform .4s ease;font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.5)}.toast.show{transform:translateX(-50%) translateY(0)}
+        .signal-bar{width:4px;background:var(--muted);border-radius:1px;transition:background .3s}.signal-bar.active{background:var(--accent)}
+        .playlist-item{transition:all .2s;cursor:pointer}.playlist-item:hover{background:var(--surface)}.playlist-item.active-track{background:var(--surface);border-left:3px solid var(--accent)}
+        .calc-btn{transition:all .15s;font-family:'Rajdhani',sans-serif;font-weight:600}.calc-btn:active{transform:scale(.95)}
+        .note-area{background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:16px;resize:none;outline:none}.note-area:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-glow)}
+        .speed-ring{stroke:var(--border);fill:none;stroke-width:4}.speed-ring-value{stroke:var(--accent);fill:none;stroke-width:4;stroke-linecap:round;transition:stroke-dashoffset .5s}
+        .search-input{background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;outline:none}.search-input:focus{border-color:var(--accent)}.search-input::placeholder{color:var(--muted)}
+        .bg-grid{position:fixed;inset:0;background-image:linear-gradient(rgba(245,158,11,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(245,158,11,.03) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;z-index:0}
+        .day-mode .bg-grid{background-image:linear-gradient(rgba(0,0,0,.03) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.03) 1px,transparent 1px)}
+        .radio-off .freq-display-el{opacity:.15!important}.radio-off .digital-glow{text-shadow:none!important}
+        .tool-tab{transition:all .2s}
+        .viaje-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;transition:all .2s}.viaje-card:hover{border-color:var(--accent)}
+        .search-results{position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;z-index:1001;display:none}.search-results.visible{display:block}
+        .search-result-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;transition:background .15s}.search-result-item:hover{background:var(--surface)}.search-result-item:last-child{border-bottom:none}
+        @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div id="toast" class="toast"></div>
+    <div class="relative z-10 flex flex-col" style="height:100vh;height:100dvh">
+        <!-- Encabezado -->
+        <header class="flex items-center justify-between px-4 py-2 flex-shrink-0" style="background:var(--card);border-bottom:1px solid var(--border)">
+            <div class="flex items-center gap-3">
+                <div id="clock" class="font-digital text-2xl font-bold" style="color:var(--accent)">00:00:00</div>
+                <div id="date" class="text-sm font-ui" style="color:var(--muted)"></div>
+            </div>
+            <div class="font-digital text-xs font-bold tracking-widest" style="color:var(--muted)">RADIOTAXI PRO</div>
+            <button id="btn-night" onclick="toggleNightMode()" class="w-10 h-10 rounded-lg flex items-center justify-center" style="background:var(--surface);color:var(--text)" aria-label="Cambiar modo"><i class="fas fa-moon"></i></button>
+        </header>
+
+        <!-- Contenido -->
+        <main class="flex-1 relative overflow-hidden" id="main-area">
+            <!-- RADIO -->
+            <section id="tab-radio" class="tab-content absolute inset-0 flex flex-col p-4 fade-in" data-tab="radio">
+                <div class="flex-1 flex flex-col items-center justify-center gap-4 max-w-lg mx-auto w-full">
+                    <button id="radio-power" onclick="toggleRadio()" class="w-14 h-14 rounded-full flex items-center justify-center text-xl transition-all" style="background:var(--surface);color:var(--muted);border:2px solid var(--border)" aria-label="Encender radio"><i class="fas fa-power-off"></i></button>
+                    <div class="w-full text-center">
+                        <div class="flex items-center justify-center gap-2 mb-1">
+                            <span class="font-digital text-xs font-bold px-2 py-0.5 rounded" style="background:var(--surface);color:var(--muted)">FM</span>
+                            <span id="station-name" class="font-ui text-sm font-bold" style="color:var(--accent);opacity:0">—</span>
+                        </div>
+                        <div id="freq-display" class="freq-display-el font-digital text-6xl font-black digital-glow" style="color:var(--accent)">98.7</div>
+                        <div class="font-digital text-xs mt-1" style="color:var(--muted)">MHz</div>
+                    </div>
+                    <div class="flex items-end gap-1 h-6" id="signal-bars">
+                        <div class="signal-bar h-1"></div><div class="signal-bar h-2"></div><div class="signal-bar h-3"></div><div class="signal-bar h-4"></div><div class="signal-bar h-6"></div>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <button onclick="seekDown()" class="h-12 px-3 rounded-lg flex items-center justify-center text-sm font-bold font-ui" style="background:var(--card);color:var(--muted);border:1px solid var(--border)">SEEK <i class="fas fa-backward ml-1"></i></button>
+                        <button onclick="tuneDown()" class="w-16 h-16 rounded-xl flex items-center justify-center text-2xl" style="background:var(--surface);color:var(--text);border:1px solid var(--border)" aria-label="Bajar"><i class="fas fa-chevron-down"></i></button>
+                        <button onclick="tuneUp()" class="w-16 h-16 rounded-xl flex items-center justify-center text-2xl" style="background:var(--surface);color:var(--text);border:1px solid var(--border)" aria-label="Subir"><i class="fas fa-chevron-up"></i></button>
+                        <button onclick="seekUp()" class="h-12 px-3 rounded-lg flex items-center justify-center text-sm font-bold font-ui" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"><i class="fas fa-forward mr-1"></i> SEEK</button>
+                    </div>
+                    <div class="grid grid-cols-6 gap-2 w-full max-w-sm" id="presets-grid"></div>
+                    <canvas id="spectrum" class="w-full rounded-lg" style="background:var(--surface);height:70px;border:1px solid var(--border)"></canvas>
+                    <p class="font-ui text-xs text-center" style="color:var(--muted)">Mantené presionado un preset para guardar la frecuencia actual</p>
+                </div>
+            </section>
+
+            <!-- MUSICA -->
+            <section id="tab-music" class="tab-content absolute inset-0 flex flex-col fade-in hidden" data-tab="music">
+                <div class="p-4 pb-2 flex-shrink-0">
+                    <label class="flex items-center justify-center gap-2 w-full h-14 rounded-xl cursor-pointer font-ui font-bold text-lg" style="background:var(--accent);color:#000">
+                        <i class="fas fa-folder-open"></i> CARGAR ARCHIVOS DE AUDIO
+                        <input type="file" id="music-files" accept="audio/*" multiple class="hidden">
+                    </label>
+                </div>
+                <div class="px-4 py-3 flex-1 flex flex-col min-h-0">
+                    <div class="flex items-center gap-4 mb-3 flex-shrink-0">
+                        <div id="album-art" class="w-20 h-20 rounded-xl flex items-center justify-center text-3xl flex-shrink-0" style="background:var(--surface);color:var(--muted)"><i class="fas fa-music"></i></div>
+                        <div class="flex-1 min-w-0">
+                            <div id="track-name" class="font-ui font-bold text-lg truncate">Ningun archivo cargado</div>
+                            <div id="track-info" class="font-ui text-sm" style="color:var(--muted)">Carga musica para comenzar</div>
+                        </div>
+                    </div>
+                    <div class="mb-2 flex-shrink-0">
+                        <input type="range" id="progress-bar" min="0" max="1000" value="0" class="w-full">
+                        <div class="flex justify-between font-digital text-xs mt-1" style="color:var(--muted)"><span id="time-current">0:00</span><span id="time-total">0:00</span></div>
+                    </div>
+                    <div class="flex items-center justify-center gap-4 mb-4 flex-shrink-0">
+                        <button onclick="prevTrack()" class="w-12 h-12 rounded-full flex items-center justify-center" style="background:var(--surface);color:var(--text)" aria-label="Anterior"><i class="fas fa-backward"></i></button>
+                        <button id="play-btn" onclick="togglePlay()" class="w-16 h-16 rounded-full flex items-center justify-center text-xl" style="background:var(--accent);color:#000" aria-label="Play"><i class="fas fa-play" id="play-icon"></i></button>
+                        <button onclick="nextTrack()" class="w-12 h-12 rounded-full flex items-center justify-center" style="background:var(--surface);color:var(--text)" aria-label="Siguiente"><i class="fas fa-forward"></i></button>
+                    </div>
+                    <div class="flex-1 overflow-y-auto rounded-xl" style="background:var(--surface);border:1px solid var(--border)">
+                        <div id="playlist"><div class="p-4 text-center font-ui" style="color:var(--muted)">La playlist aparecera aqui</div></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- MAPA -->
+            <section id="tab-map" class="tab-content absolute inset-0 flex flex-col fade-in hidden" data-tab="map">
+                <div class="p-3 pb-0 relative z-[1000] flex-shrink-0">
+                    <div class="flex gap-2 relative">
+                        <div class="flex-1 relative">
+                            <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2" style="color:var(--muted)"></i>
+                            <input type="text" id="map-search" class="search-input w-full h-10 pl-10 pr-4 rounded-lg text-sm" placeholder="Buscar direccion...">
+                            <div id="search-results" class="search-results"></div>
+                        </div>
+                        <button onclick="searchAddress()" class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background:var(--accent);color:#000" aria-label="Buscar"><i class="fas fa-search"></i></button>
+                        <button onclick="centerMap()" class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background:var(--surface);color:var(--text);border:1px solid var(--border)" aria-label="Centrar"><i class="fas fa-crosshairs"></i></button>
+                    </div>
+                </div>
+                <div class="flex-1 p-3 pt-2 relative min-h-0">
+                    <div id="map-container"></div>
+                    <div class="absolute bottom-6 left-6 rounded-xl p-3 flex items-center gap-3" style="background:rgba(0,0,0,.8);backdrop-filter:blur(10px);border:1px solid var(--border)">
+                        <svg width="60" height="60" viewBox="0 0 60 60"><circle cx="30" cy="30" r="26" class="speed-ring"/><circle cx="30" cy="30" r="26" class="speed-ring-value" id="speed-arc" stroke-dasharray="163.36" stroke-dashoffset="163.36" transform="rotate(-90 30 30)"/></svg>
+                        <div><div id="speed-value" class="font-digital text-2xl font-bold" style="color:var(--accent)">0</div><div class="font-ui text-xs" style="color:var(--muted)">km/h</div></div>
+                    </div>
+                    <div id="gps-status" class="absolute top-6 left-6 rounded-lg px-3 py-1.5 font-ui text-sm" style="background:rgba(0,0,0,.8);backdrop-filter:blur(10px);color:var(--muted);border:1px solid var(--border)"><i class="fas fa-satellite-dish mr-1"></i> Sin señal GPS</div>
+                </div>
+            </section>
+
+            <!-- HERRAMIENTAS -->
+            <section id="tab-tools" class="tab-content absolute inset-0 flex flex-col fade-in hidden" data-tab="tools">
+                <div class="flex-1 overflow-y-auto p-4">
+                    <div class="flex gap-2 mb-4 flex-wrap">
+                        <button onclick="switchTool('notas')" class="tool-tab px-4 py-2 rounded-lg font-ui font-bold text-sm" id="tool-tab-notas" style="background:var(--accent);color:#000"><i class="fas fa-sticky-note mr-1"></i>Notas</button>
+                        <button onclick="switchTool('calc')" class="tool-tab px-4 py-2 rounded-lg font-ui font-bold text-sm" id="tool-tab-calc" style="background:var(--surface);color:var(--text)"><i class="fas fa-calculator mr-1"></i>Calculadora</button>
+                        <button onclick="switchTool('crono')" class="tool-tab px-4 py-2 rounded-lg font-ui font-bold text-sm" id="tool-tab-crono" style="background:var(--surface);color:var(--text)"><i class="fas fa-stopwatch mr-1"></i>Cronometro</button>
+                        <button onclick="switchTool('viajes')" class="tool-tab px-4 py-2 rounded-lg font-ui font-bold text-sm" id="tool-tab-viajes" style="background:var(--surface);color:var(--text)"><i class="fas fa-taxi mr-1"></i>Viajes</button>
+                    </div>
+                    <div id="tool-notas" class="tool-content">
+                        <textarea id="notas-text" class="note-area w-full rounded-xl p-4" rows="14" placeholder="Escribi tus notas aqui... direcciones, telefonos, lo que necesites recordar."></textarea>
+                        <div class="mt-2 text-right font-ui text-xs" style="color:var(--muted)"><i class="fas fa-save mr-1"></i>Se guarda automaticamente</div>
+                    </div>
+                    <div id="tool-calc" class="tool-content hidden">
+                        <div class="max-w-xs mx-auto">
+                            <div id="calc-display" class="font-digital text-3xl font-bold text-right p-4 rounded-xl mb-3 overflow-hidden" style="background:var(--surface);color:var(--text);border:1px solid var(--border);min-height:60px;word-break:break-all">0</div>
+                            <div class="grid grid-cols-4 gap-2">
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--surface);color:var(--danger)" onclick="calcInput('C')">C</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--surface);color:var(--text)" onclick="calcInput('±')">±</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--surface);color:var(--text)" onclick="calcInput('%')">%</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--accent);color:#000" onclick="calcInput('÷')">÷</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('7')">7</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('8')">8</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('9')">9</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--accent);color:#000" onclick="calcInput('×')">×</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('4')">4</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('5')">5</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('6')">6</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--accent);color:#000" onclick="calcInput('-')">−</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('1')">1</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('2')">2</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('3')">3</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--accent);color:#000" onclick="calcInput('+')">+</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl col-span-2" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('0')">0</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('.')">.</button>
+                                <button class="calc-btn h-14 rounded-lg text-xl" style="background:var(--accent);color:#000" onclick="calcInput('=')">=</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="tool-crono" class="tool-content hidden">
+                        <div class="text-center">
+                            <div id="crono-display" class="font-digital text-5xl font-bold mb-6 digital-glow" style="color:var(--accent)">00:00.00</div>
+                            <div class="flex justify-center gap-4 mb-6">
+                                <button id="crono-start-btn" onclick="cronoToggle()" class="w-20 h-20 rounded-full flex items-center justify-center text-2xl" style="background:var(--success);color:#000"><i class="fas fa-play"></i></button>
+                                <button onclick="cronoLap()" class="w-20 h-20 rounded-full flex items-center justify-center text-2xl" style="background:var(--surface);color:var(--text);border:1px solid var(--border)"><i class="fas fa-flag"></i></button>
+                                <button onclick="cronoReset()" class="w-20 h-20 rounded-full flex items-center justify-center text-2xl" style="background:var(--surface);color:var(--danger);border:1px solid var(--border)"><i class="fas fa-undo"></i></button>
+                            </div>
+                            <div id="crono-laps" class="max-w-xs mx-auto space-y-1"></div>
+                        </div>
+                    </div>
+                    <div id="tool-viajes" class="tool-content hidden">
+                        <div class="flex gap-2 mb-4">
+                            <input type="text" id="viaje-nota" class="search-input flex-1 h-10 px-3 rounded-lg text-sm" placeholder="Nota del viaje (direccion, monto...)" onkeydown="if(event.key==='Enter')addViaje()">
+                            <button onclick="addViaje()" class="px-4 h-10 rounded-lg font-ui font-bold text-sm flex-shrink-0" style="background:var(--accent);color:#000"><i class="fas fa-plus mr-1"></i>Agregar</button>
+                        </div>
+                        <div id="viajes-count" class="font-ui text-sm mb-3" style="color:var(--muted)"></div>
+                        <div id="viajes-list" class="space-y-2"><div class="text-center font-ui py-8" style="color:var(--muted)">No hay viajes registrados</div></div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Pie -->
+        <footer class="flex items-center flex-shrink-0" style="background:var(--card);border-top:1px solid var(--border)">
+            <div id="mini-player" class="hidden items-center gap-2 px-3 flex-shrink-0" style="border-right:1px solid var(--border)">
+                <button onclick="togglePlay()" class="w-8 h-8 rounded-full flex items-center justify-center text-sm" style="background:var(--accent);color:#000"><i class="fas fa-pause" id="mini-play-icon"></i></button>
+                <span id="mini-track" class="font-ui text-sm truncate max-w-[120px]">—</span>
+            </div>
+            <div class="flex-1 flex items-center justify-around">
+                <button class="tab-btn active flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('radio')" id="tab-btn-radio" aria-label="Radio"><i class="fas fa-radio text-lg"></i><span class="font-ui text-xs font-bold">RADIO</span></button>
+                <button class="tab-btn flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('music')" id="tab-btn-music" aria-label="Musica" style="color:var(--muted)"><i class="fas fa-music text-lg"></i><span class="font-ui text-xs font-bold">MUSICA</span></button>
+                <button class="tab-btn flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('map')" id="tab-btn-map" aria-label="Mapa" style="color:var(--muted)"><i class="fas fa-map-location-dot text-lg"></i><span class="font-ui text-xs font-bold">MAPA</span></button>
+                <button class="tab-btn flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('tools')" id="tab-btn-tools" aria-label="Herramientas" style="color:var(--muted)"><i class="fas fa-wrench text-lg"></i><span class="font-ui text-xs font-bold">HERRAM.</span></button>
+            </div>
+            <div class="flex items-center gap-2 px-3 flex-shrink-0" style="border-left:1px solid var(--border)">
+                <i class="fas fa-volume-low text-sm" style="color:var(--muted)" id="vol-icon"></i>
+                <input type="range" id="volume-slider" min="0" max="100" value="70" class="w-24">
+                <span id="volume-display" class="font-digital text-xs w-8 text-right" style="color:var(--muted)">70</span>
+            </div>
+        </footer>
+    </div>
+
+<script>
+/* ====== ESTADO GLOBAL ====== */
+const S={tab:'radio',night:true,vol:70,radio:{on:false,freq:98.7,presets:[88.1,91.1,93.1,98.7,101.1,105.1],names:['P1','P2','P3','P4','P5','P6']},music:{list:[],idx:-1,playing:false},gps:{lat:null,lng:null,speed:0,watch:null,active:false},crono:{on:false,start:0,elapsed:0,interval:null,laps:[]},calc:{disp:'0',first:null,op:null,wait:false},viajes:[]};
+const audio=new Audio();audio.volume=0.7;
+const $=id=>document.getElementById(id);
+
+/* ====== RELOJ ====== */
+function updateClock(){const n=new Date();$('clock').textContent=n.toLocaleTimeString('es-AR',{hour12:false});$('date').textContent=n.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase();}
+setInterval(updateClock,1000);updateClock();
+
+/* ====== MODO DIA/NOCHE ====== */
+function toggleNightMode(){S.night=!S.night;document.body.classList.toggle('day-mode',!S.night);$('btn-night').innerHTML=S.night?'<i class="fas fa-moon"></i>':'<i class="fas fa-sun"></i>';localStorage.setItem('rt_night',S.night);updateMapTiles();}
+if(localStorage.getItem('rt_night')==='false'){S.night=false;toggleNightMode();}
+
+/* ====== PESTAÑAS ====== */
+function switchTab(tab){S.tab=tab;document.querySelectorAll('.tab-content').forEach(e=>e.classList.add('hidden'));const t=$('tab-'+tab);if(t){t.classList.remove('hidden');t.classList.add('fade-in');}document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.remove('active');b.style.color='var(--muted)';});const b=$('tab-btn-'+tab);if(b){b.classList.add('active');b.style.color='';}const mp=$('mini-player');if(tab!=='music'&&S.music.playing&&S.music.list.length){mp.classList.remove('hidden');mp.classList.add('flex');}else{mp.classList.add('hidden');mp.classList.remove('flex');}if(tab==='map'&&map)setTimeout(()=>map.invalidateSize(),100);if(tab!=='radio'&&noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);else if(tab==='radio'&&S.radio.on)updateRadioAudio();}
+
+/* ====== AUDIO - Radio simulada ====== */
+let audioCtx,noiseSource,noiseGain,noiseFilter,analyser,masterGain;
+function initAudioContext(){if(audioCtx)return;audioCtx=new(window.AudioContext||window.webkitAudioContext)();analyser=audioCtx.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=0.8;masterGain=audioCtx.createGain();masterGain.gain.value=S.vol/100;masterGain.connect(analyser);analyser.connect(audioCtx.destination);const len=audioCtx.sampleRate*2,buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate),d=buf.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;noiseSource=audioCtx.createBufferSource();noiseSource.buffer=buf;noiseSource.loop=true;noiseFilter=audioCtx.createBiquadFilter();noiseFilter.type='bandpass';noiseFilter.frequency.value=800;noiseFilter.Q.value=0.5;noiseGain=audioCtx.createGain();noiseGain.gain.value=0;noiseSource.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(masterGain);noiseSource.start();initSpectrum();}
+
+function toggleRadio(){initAudioContext();if(audioCtx.state==='suspended')audioCtx.resume();S.radio.on=!S.radio.on;const btn=$('radio-power'),sec=$('tab-radio');if(S.radio.on){btn.style.background='var(--accent)';btn.style.color='#000';btn.style.borderColor='var(--accent)';btn.classList.add('pulse-glow');sec.classList.remove('radio-off');updateRadioAudio();}else{btn.style.background='var(--surface)';btn.style.color='var(--muted)';btn.style.borderColor='var(--border)';btn.classList.remove('pulse-glow');sec.classList.add('radio-off');if(noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);clearSignalBars();$('station-name').style.opacity='0';}}
+
+function tuneUp(){if(!S.radio.on)return;S.radio.freq=Math.min(108,+(S.radio.freq+0.1).toFixed(1));$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
+function tuneDown(){if(!S.radio.on)return;S.radio.freq=Math.max(88,+(S.radio.freq-0.1).toFixed(1));$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
+function seekUp(){if(!S.radio.on)return;let best=108.1,bd=999;S.radio.presets.forEach(p=>{if(p>S.radio.freq){const d=p-S.radio.freq;if(d<bd){bd=d;best=p;}}});if(best>108)best=S.radio.presets[0];S.radio.freq=Math.min(108,best);$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
+function seekDown(){if(!S.radio.on)return;let best=87.9,bd=999;S.radio.presets.forEach(p=>{if(p<S.radio.freq){const d=S.radio.freq-p;if(d<bd){bd=d;best=p;}}});if(best<88)best=S.radio.presets[S.radio.presets.length-1];S.radio.freq=Math.max(88,best);$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
+
+function updateRadioAudio(){if(!audioCtx||!S.radio.on||S.tab!=='radio')return;let md=Infinity;S.radio.presets.forEach(p=>{md=Math.min(md,Math.abs(S.radio.freq-p));});const th=0.3;if(md<th){const cl=1-md/th;noiseGain.gain.setTargetAtTime(0.05*(1-cl*0.8),audioCtx.currentTime,0.08);const idx=S.radio.presets.findIndex(p=>Math.abs(p-S.radio.freq)<0.05);if(idx>=0){$('station-name').textContent=S.radio.names[idx];$('station-name').style.opacity='1';}}else{noiseGain.gain.setTargetAtTime(0.2,audioCtx.currentTime,0.08);$('station-name').style.opacity='0';}noiseFilter.frequency.setTargetAtTime(300+(S.radio.freq-88)*50,audioCtx.currentTime,0.1);const lv=md<th?Math.ceil((1-md/th)*5):Math.max(0,Math.ceil(5-md*8));updateSignalBars(lv);updatePresetHighlight();}
+
+function updateSignalBars(lv){const bars=$('signal-bars').children;for(let i=0;i<bars.length;i++)bars[i].classList.toggle('active',i<lv);}
+function clearSignalBars(){const bars=$('signal-bars').children;for(let i=0;i<bars.length;i++)bars[i].classList.remove('active');}
+
+/* Presets */
+function buildPresets(){const g=$('presets-grid');g.innerHTML='';S.radio.presets.forEach((freq,idx)=>{const btn=document.createElement('button');btn.className='preset-btn h-12 rounded-lg font-digital text-sm font-bold';btn.style.cssText='background:var(--surface);color:var(--text);border:1px solid var(--border)';btn.id='preset-'+idx;btn.textContent=freq.toFixed(1);btn.setAttribute('aria-label','Preset '+(idx+1));let timer,lp=false;const start=()=>{lp=false;timer=setTimeout(()=>{lp=true;S.radio.presets[idx]=S.radio.freq;btn.textContent=S.radio.freq.toFixed(1);savePresets();showToast('Guardado: '+S.radio.freq.toFixed(1)+' MHz');},700);};const end=()=>clearTimeout(timer);btn.addEventListener('click',()=>{if(lp){lp=false;return;}if(!S.radio.on)return;S.radio.freq=freq;$('freq-display').textContent=freq.toFixed(1);updateRadioAudio();});btn.addEventListener('mousedown',start);btn.addEventListener('mouseup',end);btn.addEventListener('mouseleave',end);btn.addEventListener('touchstart',e=>{e.preventDefault();start();},{passive:false});btn.addEventListener('touchend',end);btn.addEventListener('touchcancel',end);g.appendChild(btn);});}
+function updatePresetHighlight(){S.radio.presets.forEach((f,i)=>{const b=$('preset-'+i);if(b)b.classList.toggle('active-preset',Math.abs(f-S.radio.freq)<0.05);});}
+function savePresets(){localStorage.setItem('rt_presets',JSON.stringify(S.radio.presets));}
+function loadPresets(){const s=localStorage.getItem('rt_presets');if(s)try{S.radio.presets=JSON.parse(s);}catch(e){}buildPresets();}
+
+/* Espectro */
+function initSpectrum(){const canvas=$('spectrum'),ctx=canvas.getContext('2d'),bl=analyser.frequencyBinCount,data=new Uint8Array(bl);function draw(){requestAnimationFrame(draw);const w=canvas.width=canvas.offsetWidth*2,h=canvas.height=canvas.offsetHeight*2;ctx.clearRect(0,0,w,h);analyser.getByteFrequencyData(data);const bw=w/bl,ac=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();for(let i=0;i<bl;i++){const v=S.radio.on?data[i]/255:0,bh=v*h*0.9,x=i*bw;ctx.fillStyle=ac;ctx.globalAlpha=0.6+v*0.4;ctx.fillRect(x,h-bh,Math.max(1,bw-1),bh);ctx.globalAlpha=0.15;ctx.fillRect(x,h,Math.max(1,bw-1),bh*0.3);}ctx.globalAlpha=1;if(!S.radio.on){const t=Date.now()/1000;ctx.beginPath();ctx.strokeStyle=ac;ctx.globalAlpha=0.15;ctx.lineWidth=2;for(let x=0;x<w;x++){const y=h/2+Math.sin(x/30+t*2)*8+Math.sin(x/15+t)*4;x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}ctx.stroke();ctx.globalAlpha=1;}}draw();}
+
+/* Deslizar para sintonizar */
+(function(){const el=$('freq-display');let sy=null;el.addEventListener('touchstart',e=>{sy=e.touches[0].clientY;},{passive:true});el.addEventListener('touchmove',e=>{if(!sy||!S.radio.on)return;const d=sy-e.touches[0].clientY;if(Math.abs(d)>15){d>0?tuneUp():tuneDown();sy=e.touches[0].clientY;}},{passive:true});el.addEventListener('touchend',()=>{sy=null;},{passive:true});})();
+
+/* ====== VOLUMEN ====== */
+function setVolume(v){S.vol=parseInt(v);audio.volume=S.vol/100;if(masterGain)masterGain.gain.setTargetAtTime(S.vol/100,audioCtx.currentTime,0.05);$('volume-display').textContent=S.vol;const i=$('vol-icon');i.className=S.vol===0?'fas fa-volume-xmark text-sm':S.vol<40?'fas fa-volume-low text-sm':'fas fa-volume-high text-sm';localStorage.setItem('rt_vol',S.vol);}
+ $('volume-slider').addEventListener('input',function(){setVolume(this.value);});
+const sv=localStorage.getItem('rt_vol');if(sv){$('volume-slider').value=sv;setVolume(sv);}
+
+/* ====== MUSICA ====== */
+ $('music-files').addEventListener('change',function(e){const files=Array.from(e.target.files);if(!files.length)return;initAudioContext();files.forEach(f=>{S.music.list.push({name:f.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(f)});});renderPlaylist();if(S.music.idx===-1){S.music.idx=0;loadTrack();}showToast(files.length+' archivo(s) cargado(s)');});
+
+function renderPlaylist(){const el=$('playlist');if(!S.music.list.length){el.innerHTML='<div class="p-4 text-center font-ui" style="color:var(--muted)">La playlist aparecera aqui</div>';return;}el.innerHTML=S.music.list.map((t,i)=>'<div class="playlist-item px-4 py-3 flex items-center gap-3 '+(i===S.music.idx?'active-track':'')+'" onclick="playTrack('+i+')"><span class="font-digital text-xs w-6 text-center" style="color:var(--muted)">'+(i===S.music.idx&&S.music.playing?'<i class="fas fa-volume-high" style="color:var(--accent)"></i>':(i+1))+'</span><span class="font-ui font-semibold truncate flex-1">'+t.name+'</span><button onclick="event.stopPropagation();removeTrack('+i+')" class="w-8 h-8 rounded flex items-center justify-center" style="color:var(--muted)" aria-label="Eliminar"><i class="fas fa-times"></i></button></div>').join('');}
+
+function loadTrack(){if(S.music.idx<0||S.music.idx>=S.music.list.length)return;const t=S.music.list[S.music.idx];audio.src=t.url;$('track-name').textContent=t.name;$('track-info').textContent='Track '+(S.music.idx+1)+' de '+S.music.list.length;$('mini-track').textContent=t.name;renderPlaylist();}
+function playTrack(idx){S.music.idx=idx;loadTrack();audio.play().catch(()=>{});S.music.playing=true;updatePlayBtn();}
+function togglePlay(){if(!S.music.list.length)return;if(S.music.idx===-1){S.music.idx=0;loadTrack();}if(S.music.playing)audio.pause();else audio.play().catch(()=>{});S.music.playing=!S.music.playing;updatePlayBtn();}
+function nextTrack(){if(!S.music.list.length)return;S.music.idx=(S.music.idx+1)%S.music.list.length;loadTrack();if(S.music.playing)audio.play().catch(()=>{});updatePlayBtn();}
+function prevTrack(){if(!S.music.list.length)return;if(audio.currentTime>3){audio.currentTime=0;return;}S.music.idx=(S.music.idx-1+S.music.list.length)%S.music.list.length;loadTrack();if(S.music.playing)audio.play().catch(()=>{});updatePlayBtn();}
+function removeTrack(idx){URL.revokeObjectURL(S.music.list[idx].url);S.music.list.splice(idx,1);if(idx===S.music.idx){if(S.music.list.length){S.music.idx=Math.min(idx,S.music.list.length-1);loadTrack();if(S.music.playing)audio.play().catch(()=>{});}else{S.music.idx=-1;S.music.playing=false;$('track-name').textContent='Ningun archivo cargado';$('track-info').textContent='Carga musica para comenzar';audio.src='';}}else if(idx<S.music.idx)S.music.idx--;renderPlaylist();updatePlayBtn();}
+function updatePlayBtn(){const ic=S.music.playing?'fa-pause':'fa-play';$('play-icon').className='fas '+ic;$('mini-play-icon').className='fas '+ic;const mp=$('mini-player');if(S.tab!=='music'&&S.music.playing&&S.music.list.length){mp.classList.remove('hidden');mp.classList.add('flex');}else{mp.classList.add('hidden');mp.classList.remove('flex');}}
+audio.addEventListener('ended',nextTrack);
+audio.addEventListener('timeupdate',()=>{if(!audio.duration)return;$('progress-bar').value=(audio.currentTime/audio.duration)*1000;$('time-current').textContent=fmtTime(audio.currentTime);$('time-total').textContent=fmtTime(audio.duration);});
+ $('progress-bar').addEventListener('input',function(){if(audio.duration)audio.currentTime=(this.value/1000)*audio.duration;});
+function fmtTime(s){const m=Math.floor(s/60);return m+':'+String(Math.floor(s%60)).padStart(2,'0');}
+
+/* ====== MAPA Y GPS ====== */
+let map,darkTiles,lightTiles,userMarker,searchMarker;
+function initMap(){darkTiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'OSM/CARTO',maxZoom:19});lightTiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'OSM/CARTO',maxZoom:19});map=L.map('map-container',{layers:[S.night?darkTiles:lightTiles],zoomControl:false});L.control.zoom({position:'topright'}).addTo(map);map.setView([-34.6037,-58.3816],13);if('geolocation' in navigator){navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],15);},()=>{},{enableHighAccuracy:true,timeout:5000});}}
+function updateMapTiles(){if(!map)return;const cur=S.night?darkTiles:lightTiles,oth=S.night?lightTiles:darkTiles;if(map.hasLayer(oth))map.removeLayer(oth);if(!map.hasLayer(cur))map.addLayer(cur);}
+function startGPS(){if(!('geolocation' in navigator))return;if(S.gps.watch)navigator.geolocation.clearWatch(S.gps.watch);S.gps.watch=navigator.geolocation.watchPosition(p=>{S.gps.active=true;S.gps.lat=p.coords.latitude;S.gps.lng=p.coords.longitude;S.gps.speed=p.coords.speed?Math.round(p.coords.speed*3.6):0;if(!userMarker){userMarker=L.circleMarker([S.gps.lat,S.gps.lng],{radius:8,fillColor:'#F59E0B',fillOpacity:1,color:'#fff',weight:3}).addTo(map);map.setView([S.gps.lat,S.gps.lng],15);}else{userMarker.setLatLng([S.gps.lat,S.gps.lng]);}$('speed-value').textContent=S.gps.speed;const circ=163.36,off=circ-(Math.min(S.gps.speed,120)/120)*circ;$('speed-arc').style.strokeDashoffset=off;$('gps-status').innerHTML='<i class="fas fa-satellite-dish mr-1" style="color:var(--success)"></i> GPS activo';$('gps-status').style.color='var(--success)';},()=>{$('gps-status').innerHTML='<i class="fas fa-satellite-dish mr-1" style="color:var(--danger)"></i> Error GPS';$('gps-status').style.color='var(--danger)';},{enableHighAccuracy:true,maximumAge:1000});}
+function centerMap(){if(S.gps.lat)map.setView([S.gps.lat,S.gps.lng],16,{animate:true});else if('geolocation' in navigator)navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],16,{animate:true});},()=>showToast('No se pudo obtener ubicacion'),{enableHighAccuracy:true});else showToast('GPS no disponible');}
+
+let searchTimeout;
+ $('map-search').addEventListener('input',function(){clearTimeout(searchTimeout);const q=this.value.trim();if(q.length<3){$('search-results').classList.remove('visible');return;}searchTimeout=setTimeout(()=>doSearch(q),500);});
+ $('map-search').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();searchAddress();}});
+async function doSearch(q){try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=5&accept-language=es');const d=await r.json();const el=$('search-results');if(!d.length){el.innerHTML='<div class="search-result-item" style="color:var(--muted)">Sin resultados</div>';el.classList.add('visible');return;}el.innerHTML=d.map(r=>'<div class="search-result-item" onclick="goToResult('+r.lat+','+r.lon+',this.dataset.name)" data-name=\''+r.display_name.replace(/'/g,"&#39;")+'\'>'+r.display_name+'</div>').join('');el.classList.add('visible');}catch(e){}}
+function searchAddress(){const q=$('map-search').value.trim();if(q.length>=3)doSearch(q);}
+function goToResult(lat,lon,name){$('search-results').classList.remove('visible');if(searchMarker)map.removeLayer(searchMarker);searchMarker=L.marker([lat,lon]).addTo(map).bindPopup(name).openPopup();map.setView([lat,lon],16,{animate:true});}
+document.addEventListener('click',e=>{if(!e.target.closest('#map-search')&&!e.target.closest('#search-results'))$('search-results').classList.remove('visible');});
+
+/* ====== HERRAMIENTAS ====== */
+function switchTool(tool){document.querySelectorAll('.tool-content').forEach(e=>e.classList.add('hidden'));$('tool-'+tool).classList.remove('hidden');document.querySelectorAll('.tool-tab').forEach(b=>{b.style.background='var(--surface)';b.style.color='var(--text)';});$('tool-tab-'+tool).style.background='var(--accent)';$('tool-tab-'+tool).style.color='#000';}
+
+/* Notas */
+ $('notas-text').value=localStorage.getItem('rt_notas')||'';
+ $('notas-text').addEventListener('input',()=>{localStorage.setItem('rt_notas',$('notas-text').value);});
+
+/* Calculadora */
+function calcInput(v){const c=S.calc;if(v==='C'){c.disp='0';c.first=null;c.op=null;c.wait=false;}else if(v==='±'){c.disp=String(-parseFloat(c.disp));}else if(v==='%'){c.disp=String(parseFloat(c.disp)/100);}else if(['+','-','×','÷'].includes(v)){if(c.first!==null&&!c.wait)c.disp=String(calcDo(c.first,parseFloat(c.disp),c.op));c.first=parseFloat(c.disp);c.op=v;c.wait=true;}else if(v==='='){if(c.first!==null&&c.op){c.disp=String(calcDo(c.first,parseFloat(c.disp),c.op));c.first=null;c.op=null;c.wait=false;}}else{if(c.wait){c.disp=v==='.'?'0.':v;c.wait=false;}else{if(v==='.'&&c.disp.includes('.'))return;c.disp=c.disp==='0'&&v!=='.'?v:c.disp+v;}}$('calc-display').textContent=c.disp;}
+function calcDo(a,b,op){switch(op){case'+':return+(a+b).toFixed(10);case'-':return+(a-b).toFixed(10);case'×':return+(a*b).toFixed(10);case'÷':return b!==0?+(a/b).toFixed(10):'Error';}return b;}
+
+/* Cronometro */
+function cronoToggle(){if(S.crono.on){clearInterval(S.crono.interval);S.crono.elapsed+=Date.now()-S.crono.start;S.crono.on=false;$('crono-start-btn').innerHTML='<i class="fas fa-play"></i>';$('crono-start-btn').style.background='var(--success)';}else{S.crono.start=Date.now();S.crono.on=true;S.crono.interval=setInterval(updateCrono,30);$('crono-start-btn').innerHTML='<i class="fas fa-pause"></i>';$('crono-start-btn').style.background='var(--accent)';}}
+function cronoLap(){if(!S.crono.on)return;S.crono.laps.push(S.crono.elapsed+Date.now()-S.crono.start);renderLaps();}
+function cronoReset(){clearInterval(S.crono.interval);S.crono.on=false;S.crono.elapsed=0;S.crono.laps=[];$('crono-display').textContent='00:00.00';$('crono-start-btn').innerHTML='<i class="fas fa-play"></i>';$('crono-start-btn').style.background='var(--success)';$('crono-laps').innerHTML='';}
+function updateCrono(){$('crono-display').textContent=fmtCrono(S.crono.elapsed+Date.now()-S.crono.start);}
+function fmtCrono(ms){const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000),cs=Math.floor((ms%1000)/10);return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'.'+String(cs).padStart(2,'0');}
+function renderLaps(){$('crono-laps').innerHTML=S.crono.laps.map((l,i)=>'<div class="flex justify-between px-4 py-2 rounded-lg font-ui" style="background:var(--surface)"><span style="color:var(--muted)">Vuelta '+(i+1)+'</span><span class="font-digital text-sm" style="color:var(--accent)">'+fmtCrono(l)+'</span></div>').reverse().join('');}
+
+/* Viajes */
+function loadViajes(){const s=localStorage.getItem('rt_viajes');if(s)try{S.viajes=JSON.parse(s);}catch(e){S.viajes=[];}const today=new Date().toDateString();S.viajes=S.viajes.filter(v=>new Date(v.date).toDateString()===today);renderViajes();}
+function addViaje(){const nota=$('viaje-nota').value.trim();if(!nota){showToast('Escribi una nota para el viaje');return;}const cronoTime=S.crono.on?fmtCrono(S.crono.elapsed+Date.now()-S.crono.start):null;S.viajes.push({date:new Date().toISOString(),nota,crono:cronoTime});$('viaje-nota').value='';localStorage.setItem('rt_viajes',JSON.stringify(S.viajes));renderViajes();showToast('Viaje registrado');}
+function removeViaje(i){S.viajes.splice(i,1);localStorage.setItem('rt_viajes',JSON.stringify(S.viajes));renderViajes();}
+function renderViajes(){const el=$('viajes-list');$('viajes-count').textContent=S.viajes.length?S.viajes.length+' viaje(s) hoy':'';if(!S.viajes.length){el.innerHTML='<div class="text-center font-ui py-8" style="color:var(--muted)">No hay viajes registrados</div>';return;}el.innerHTML=S.viajes.map((v,i)=>{const t=new Date(v.date);const time=t.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});return'<div class="viaje-card"><div class="flex justify-between items-start"><div class="flex-1"><div class="font-ui font-bold">'+v.nota+'</div><div class="font-ui text-sm mt-1" style="color:var(--muted)"><i class="fas fa-clock mr-1"></i>'+time+(v.crono?' &nbsp; <i class="fas fa-stopwatch mr-1"></i>'+v.crono:'')+'</div></div><button onclick="removeViaje('+i+')" class="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style="color:var(--muted)" aria-label="Eliminar"><i class="fas fa-times"></i></button></div></div>';}).join('');}
+
+/* ====== TOAST ====== */
+let toastTimer;
+function showToast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2500);}
+
+/* ====== INICIALIZACION ====== */
+function init(){loadPresets();initMap();startGPS();loadViajes();}
+init();
+</script>
+</body>
+</html>
