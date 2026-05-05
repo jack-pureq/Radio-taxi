@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>RadioTaxi Pro</title>
+    <title>RadioTaxi Arequipa</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -29,8 +29,10 @@
         .tab-btn.active::after{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:40px;height:3px;background:var(--accent);border-radius:0 0 3px 3px;box-shadow:0 0 10px var(--accent-glow)}
         .preset-btn{transition:all .2s}.preset-btn:active{transform:scale(.95)}
         .preset-btn.active-preset{background:var(--accent)!important;color:#000!important;box-shadow:0 0 15px var(--accent-glow)}
+        .preset-btn.has-stream{border-bottom:2px solid var(--success)!important}
         @keyframes pulseGlow{0%,100%{box-shadow:0 0 5px var(--accent-glow)}50%{box-shadow:0 0 20px var(--accent-glow),0 0 40px var(--accent-glow)}}.pulse-glow{animation:pulseGlow 2s ease-in-out infinite}
         @keyframes fadeIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}.fade-in{animation:fadeIn .3s ease-out}
+        @keyframes streamPulse{0%,100%{opacity:1}50%{opacity:.4}}.stream-live{animation:streamPulse 1.5s ease-in-out infinite;color:var(--success)!important}
         #map-container{height:100%;width:100%;border-radius:12px;overflow:hidden}
         .leaflet-control-zoom{border:none!important}.leaflet-control-zoom a{background:var(--card)!important;color:var(--text)!important;border:1px solid var(--border)!important;width:36px!important;height:36px!important;line-height:36px!important;font-size:18px!important}
         .toast{position:fixed;top:20px;left:50%;transform:translateX(-50%) translateY(-100px);background:var(--card);border:1px solid var(--border);padding:12px 24px;border-radius:8px;z-index:10000;transition:transform .4s ease;font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.5)}.toast.show{transform:translateX(-50%) translateY(0)}
@@ -47,12 +49,30 @@
         .viaje-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px;transition:all .2s}.viaje-card:hover{border-color:var(--accent)}
         .search-results{position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:200px;overflow-y:auto;z-index:1001;display:none}.search-results.visible{display:block}
         .search-result-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--border);font-size:14px;transition:background .15s}.search-result-item:hover{background:var(--surface)}.search-result-item:last-child{border-bottom:none}
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+        .modal-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:24px;width:90%;max-width:400px}
         @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
     </style>
 </head>
 <body>
     <div class="bg-grid"></div>
     <div id="toast" class="toast"></div>
+
+    <!-- Modal para configurar stream -->
+    <div id="stream-modal" class="modal-overlay" style="display:none">
+        <div class="modal-box">
+            <h3 class="font-ui font-bold text-xl mb-1" id="modal-title">Configurar Stream</h3>
+            <p class="font-ui text-sm mb-4" style="color:var(--muted)" id="modal-freq"></p>
+            <input type="text" id="stream-url-input" class="search-input w-full h-12 px-4 rounded-lg text-sm mb-2" placeholder="https://ejemplo.com/stream.mp3">
+            <p class="font-ui text-xs mb-4" style="color:var(--muted)">Pegá acá la URL del streaming de la radio. La encontrás buscando "radio X en vivo online".</p>
+            <div class="flex gap-2">
+                <button onclick="saveStreamUrl()" class="flex-1 h-12 rounded-lg font-ui font-bold" style="background:var(--accent);color:#000"><i class="fas fa-save mr-1"></i>Guardar</button>
+                <button onclick="deleteStreamUrl()" class="h-12 px-4 rounded-lg font-ui font-bold" style="background:var(--surface);color:var(--danger);border:1px solid var(--border)"><i class="fas fa-trash"></i></button>
+                <button onclick="closeStreamModal()" class="h-12 px-4 rounded-lg font-ui font-bold" style="background:var(--surface);color:var(--text);border:1px solid var(--border)">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
     <div class="relative z-10 flex flex-col" style="height:100vh;height:100dvh">
         <!-- Encabezado -->
         <header class="flex items-center justify-between px-4 py-2 flex-shrink-0" style="background:var(--card);border-bottom:1px solid var(--border)">
@@ -60,22 +80,26 @@
                 <div id="clock" class="font-digital text-2xl font-bold" style="color:var(--accent)">00:00:00</div>
                 <div id="date" class="text-sm font-ui" style="color:var(--muted)"></div>
             </div>
-            <div class="font-digital text-xs font-bold tracking-widest" style="color:var(--muted)">RADIOTAXI PRO</div>
-            <button id="btn-night" onclick="toggleNightMode()" class="w-10 h-10 rounded-lg flex items-center justify-center" style="background:var(--surface);color:var(--text)" aria-label="Cambiar modo"><i class="fas fa-moon"></i></button>
+            <div class="text-center">
+                <div class="font-digital text-xs font-bold tracking-widest" style="color:var(--accent)">RADIOTAXI</div>
+                <div class="font-ui text-xs font-bold tracking-wider" style="color:var(--muted)">AREQUIPA</div>
+            </div>
+            <button id="btn-night" onclick="toggleNightMode()" class="w-10 h-10 rounded-lg flex items-center justify-center" style="background:var(--surface);color:var(--text)" aria-label="Modo dia/noche"><i class="fas fa-moon"></i></button>
         </header>
 
         <!-- Contenido -->
         <main class="flex-1 relative overflow-hidden" id="main-area">
             <!-- RADIO -->
             <section id="tab-radio" class="tab-content absolute inset-0 flex flex-col p-4 fade-in" data-tab="radio">
-                <div class="flex-1 flex flex-col items-center justify-center gap-4 max-w-lg mx-auto w-full">
+                <div class="flex-1 flex flex-col items-center justify-center gap-3 max-w-lg mx-auto w-full">
                     <button id="radio-power" onclick="toggleRadio()" class="w-14 h-14 rounded-full flex items-center justify-center text-xl transition-all" style="background:var(--surface);color:var(--muted);border:2px solid var(--border)" aria-label="Encender radio"><i class="fas fa-power-off"></i></button>
                     <div class="w-full text-center">
                         <div class="flex items-center justify-center gap-2 mb-1">
                             <span class="font-digital text-xs font-bold px-2 py-0.5 rounded" style="background:var(--surface);color:var(--muted)">FM</span>
                             <span id="station-name" class="font-ui text-sm font-bold" style="color:var(--accent);opacity:0">—</span>
+                            <span id="stream-live-badge" class="font-ui text-xs font-bold px-2 py-0.5 rounded hidden" style="background:rgba(34,197,94,0.2);color:var(--success)"><i class="fas fa-circle text-[6px] mr-1 stream-live"></i>EN VIVO</span>
                         </div>
-                        <div id="freq-display" class="freq-display-el font-digital text-6xl font-black digital-glow" style="color:var(--accent)">98.7</div>
+                        <div id="freq-display" class="freq-display-el font-digital text-6xl font-black digital-glow" style="color:var(--accent)">88.1</div>
                         <div class="font-digital text-xs mt-1" style="color:var(--muted)">MHz</div>
                     </div>
                     <div class="flex items-end gap-1 h-6" id="signal-bars">
@@ -87,9 +111,10 @@
                         <button onclick="tuneUp()" class="w-16 h-16 rounded-xl flex items-center justify-center text-2xl" style="background:var(--surface);color:var(--text);border:1px solid var(--border)" aria-label="Subir"><i class="fas fa-chevron-up"></i></button>
                         <button onclick="seekUp()" class="h-12 px-3 rounded-lg flex items-center justify-center text-sm font-bold font-ui" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"><i class="fas fa-forward mr-1"></i> SEEK</button>
                     </div>
-                    <div class="grid grid-cols-6 gap-2 w-full max-w-sm" id="presets-grid"></div>
-                    <canvas id="spectrum" class="w-full rounded-lg" style="background:var(--surface);height:70px;border:1px solid var(--border)"></canvas>
-                    <p class="font-ui text-xs text-center" style="color:var(--muted)">Mantené presionado un preset para guardar la frecuencia actual</p>
+                    <!-- Presets: 2 filas de 6 -->
+                    <div class="w-full max-w-sm space-y-2" id="presets-container"></div>
+                    <canvas id="spectrum" class="w-full rounded-lg" style="background:var(--surface);height:60px;border:1px solid var(--border)"></canvas>
+                    <p class="font-ui text-xs text-center" style="color:var(--muted)">Tocá para sintonizar &bull; Mantené para guardar frecuencia &bull; <i class="fas fa-cog"></i> para agregar stream</p>
                 </div>
             </section>
 
@@ -130,7 +155,7 @@
                     <div class="flex gap-2 relative">
                         <div class="flex-1 relative">
                             <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2" style="color:var(--muted)"></i>
-                            <input type="text" id="map-search" class="search-input w-full h-10 pl-10 pr-4 rounded-lg text-sm" placeholder="Buscar direccion...">
+                            <input type="text" id="map-search" class="search-input w-full h-10 pl-10 pr-4 rounded-lg text-sm" placeholder="Buscar direccion en Arequipa...">
                             <div id="search-results" class="search-results"></div>
                         </div>
                         <button onclick="searchAddress()" class="w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0" style="background:var(--accent);color:#000" aria-label="Buscar"><i class="fas fa-search"></i></button>
@@ -216,14 +241,14 @@
                 <span id="mini-track" class="font-ui text-sm truncate max-w-[120px]">—</span>
             </div>
             <div class="flex-1 flex items-center justify-around">
-                <button class="tab-btn active flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('radio')" id="tab-btn-radio" aria-label="Radio"><i class="fas fa-radio text-lg"></i><span class="font-ui text-xs font-bold">RADIO</span></button>
-                <button class="tab-btn flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('music')" id="tab-btn-music" aria-label="Musica" style="color:var(--muted)"><i class="fas fa-music text-lg"></i><span class="font-ui text-xs font-bold">MUSICA</span></button>
-                <button class="tab-btn flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('map')" id="tab-btn-map" aria-label="Mapa" style="color:var(--muted)"><i class="fas fa-map-location-dot text-lg"></i><span class="font-ui text-xs font-bold">MAPA</span></button>
-                <button class="tab-btn flex flex-col items-center gap-0.5 px-4 py-3" onclick="switchTab('tools')" id="tab-btn-tools" aria-label="Herramientas" style="color:var(--muted)"><i class="fas fa-wrench text-lg"></i><span class="font-ui text-xs font-bold">HERRAM.</span></button>
+                <button class="tab-btn active flex flex-col items-center gap-0.5 px-3 py-3" onclick="switchTab('radio')" id="tab-btn-radio" aria-label="Radio"><i class="fas fa-radio text-lg"></i><span class="font-ui text-xs font-bold">RADIO</span></button>
+                <button class="tab-btn flex flex-col items-center gap-0.5 px-3 py-3" onclick="switchTab('music')" id="tab-btn-music" aria-label="Musica" style="color:var(--muted)"><i class="fas fa-music text-lg"></i><span class="font-ui text-xs font-bold">MUSICA</span></button>
+                <button class="tab-btn flex flex-col items-center gap-0.5 px-3 py-3" onclick="switchTab('map')" id="tab-btn-map" aria-label="Mapa" style="color:var(--muted)"><i class="fas fa-map-location-dot text-lg"></i><span class="font-ui text-xs font-bold">MAPA</span></button>
+                <button class="tab-btn flex flex-col items-center gap-0.5 px-3 py-3" onclick="switchTab('tools')" id="tab-btn-tools" aria-label="Herramientas" style="color:var(--muted)"><i class="fas fa-wrench text-lg"></i><span class="font-ui text-xs font-bold">HERRAM.</span></button>
             </div>
             <div class="flex items-center gap-2 px-3 flex-shrink-0" style="border-left:1px solid var(--border)">
                 <i class="fas fa-volume-low text-sm" style="color:var(--muted)" id="vol-icon"></i>
-                <input type="range" id="volume-slider" min="0" max="100" value="70" class="w-24">
+                <input type="range" id="volume-slider" min="0" max="100" value="70" class="w-20">
                 <span id="volume-display" class="font-digital text-xs w-8 text-right" style="color:var(--muted)">70</span>
             </div>
         </footer>
@@ -231,9 +256,38 @@
 
 <script>
 /* ====== ESTADO GLOBAL ====== */
-const S={tab:'radio',night:true,vol:70,radio:{on:false,freq:98.7,presets:[88.1,91.1,93.1,98.7,101.1,105.1],names:['P1','P2','P3','P4','P5','P6']},music:{list:[],idx:-1,playing:false},gps:{lat:null,lng:null,speed:0,watch:null,active:false},crono:{on:false,start:0,elapsed:0,interval:null,laps:[]},calc:{disp:'0',first:null,op:null,wait:false},viajes:[]};
-const audio=new Audio();audio.volume=0.7;
 const $=id=>document.getElementById(id);
+
+/* Radios de Arequipa - frecuencias reales */
+const DEFAULT_PRESETS=[
+    {freq:88.1,name:'Republica',stream:''},
+    {freq:89.3,name:'Libertad',stream:''},
+    {freq:91.1,name:'Municipal',stream:''},
+    {freq:92.5,name:'Lider',stream:''},
+    {freq:93.1,name:'Melodia',stream:''},
+    {freq:95.3,name:'Qhana',stream:''},
+    {freq:96.1,name:'Panamericana',stream:''},
+    {freq:98.3,name:'Cathedral',stream:''},
+    {freq:100.1,name:'Oxigeno',stream:''},
+    {freq:102.5,name:'Tropical',stream:''},
+    {freq:104.3,name:'Continental',stream:''},
+    {freq:106.3,name:'La Z',stream:''}
+];
+
+const S={
+    tab:'radio',night:true,vol:70,
+    radio:{on:false,freq:88.1,presets:JSON.parse(JSON.stringify(DEFAULT_PRESETS))},
+    music:{list:[],idx:-1,playing:false},
+    gps:{lat:null,lng:null,speed:0,watch:null,active:false},
+    crono:{on:false,start:0,elapsed:0,interval:null,laps:[]},
+    calc:{disp:'0',first:null,op:null,wait:false},
+    viajes:[],
+    streamEditIdx:-1
+};
+
+const audio=new Audio();audio.volume=0.7;
+const streamAudio=new Audio();streamAudio.volume=0.7;
+let currentStreamIdx=-1;
 
 /* ====== RELOJ ====== */
 function updateClock(){const n=new Date();$('clock').textContent=n.toLocaleTimeString('es-AR',{hour12:false});$('date').textContent=n.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase();}
@@ -244,49 +298,268 @@ function toggleNightMode(){S.night=!S.night;document.body.classList.toggle('day-
 if(localStorage.getItem('rt_night')==='false'){S.night=false;toggleNightMode();}
 
 /* ====== PESTAÑAS ====== */
-function switchTab(tab){S.tab=tab;document.querySelectorAll('.tab-content').forEach(e=>e.classList.add('hidden'));const t=$('tab-'+tab);if(t){t.classList.remove('hidden');t.classList.add('fade-in');}document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.remove('active');b.style.color='var(--muted)';});const b=$('tab-btn-'+tab);if(b){b.classList.add('active');b.style.color='';}const mp=$('mini-player');if(tab!=='music'&&S.music.playing&&S.music.list.length){mp.classList.remove('hidden');mp.classList.add('flex');}else{mp.classList.add('hidden');mp.classList.remove('flex');}if(tab==='map'&&map)setTimeout(()=>map.invalidateSize(),100);if(tab!=='radio'&&noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);else if(tab==='radio'&&S.radio.on)updateRadioAudio();}
+function switchTab(tab){
+    S.tab=tab;
+    document.querySelectorAll('.tab-content').forEach(e=>e.classList.add('hidden'));
+    const t=$('tab-'+tab);if(t){t.classList.remove('hidden');t.classList.add('fade-in');}
+    document.querySelectorAll('.tab-btn').forEach(b=>{b.classList.remove('active');b.style.color='var(--muted)';});
+    const b=$('tab-btn-'+tab);if(b){b.classList.add('active');b.style.color='';}
+    const mp=$('mini-player');
+    if(tab!=='music'&&S.music.playing&&S.music.list.length){mp.classList.remove('hidden');mp.classList.add('flex');}
+    else{mp.classList.add('hidden');mp.classList.remove('flex');}
+    if(tab==='map'&&map)setTimeout(()=>map.invalidateSize(),100);
+    if(tab!=='radio'){stopStreamAudio();if(noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);}
+    else if(tab==='radio'&&S.radio.on)updateRadioAudio();
+}
 
-/* ====== AUDIO - Radio simulada ====== */
+/* ====== AUDIO CONTEXT - Simulacion ====== */
 let audioCtx,noiseSource,noiseGain,noiseFilter,analyser,masterGain;
-function initAudioContext(){if(audioCtx)return;audioCtx=new(window.AudioContext||window.webkitAudioContext)();analyser=audioCtx.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=0.8;masterGain=audioCtx.createGain();masterGain.gain.value=S.vol/100;masterGain.connect(analyser);analyser.connect(audioCtx.destination);const len=audioCtx.sampleRate*2,buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate),d=buf.getChannelData(0);for(let i=0;i<len;i++)d[i]=Math.random()*2-1;noiseSource=audioCtx.createBufferSource();noiseSource.buffer=buf;noiseSource.loop=true;noiseFilter=audioCtx.createBiquadFilter();noiseFilter.type='bandpass';noiseFilter.frequency.value=800;noiseFilter.Q.value=0.5;noiseGain=audioCtx.createGain();noiseGain.gain.value=0;noiseSource.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(masterGain);noiseSource.start();initSpectrum();}
+function initAudioContext(){
+    if(audioCtx)return;
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    analyser=audioCtx.createAnalyser();analyser.fftSize=128;analyser.smoothingTimeConstant=0.8;
+    masterGain=audioCtx.createGain();masterGain.gain.value=S.vol/100;
+    masterGain.connect(analyser);analyser.connect(audioCtx.destination);
+    const len=audioCtx.sampleRate*2,buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate),d=buf.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+    noiseSource=audioCtx.createBufferSource();noiseSource.buffer=buf;noiseSource.loop=true;
+    noiseFilter=audioCtx.createBiquadFilter();noiseFilter.type='bandpass';noiseFilter.frequency.value=800;noiseFilter.Q.value=0.5;
+    noiseGain=audioCtx.createGain();noiseGain.gain.value=0;
+    noiseSource.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(masterGain);
+    noiseSource.start();initSpectrum();
+}
 
-function toggleRadio(){initAudioContext();if(audioCtx.state==='suspended')audioCtx.resume();S.radio.on=!S.radio.on;const btn=$('radio-power'),sec=$('tab-radio');if(S.radio.on){btn.style.background='var(--accent)';btn.style.color='#000';btn.style.borderColor='var(--accent)';btn.classList.add('pulse-glow');sec.classList.remove('radio-off');updateRadioAudio();}else{btn.style.background='var(--surface)';btn.style.color='var(--muted)';btn.style.borderColor='var(--border)';btn.classList.remove('pulse-glow');sec.classList.add('radio-off');if(noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);clearSignalBars();$('station-name').style.opacity='0';}}
+/* ====== STREAM DE RADIO EN VIVO ====== */
+function playStreamAudio(url,idx){
+    stopStreamAudio();
+    if(!url)return;
+    streamAudio.crossOrigin='anonymous';
+    streamAudio.src=url;
+    streamAudio.volume=S.vol/100;
+    streamAudio.play().then(()=>{
+        currentStreamIdx=idx;
+        $('stream-live-badge').classList.remove('hidden');
+        if(noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);
+    }).catch(err=>{
+        showToast('Error al conectar el stream');
+        currentStreamIdx=-1;
+        $('stream-live-badge').classList.add('hidden');
+        updateRadioAudio();
+    });
+}
+function stopStreamAudio(){
+    if(currentStreamIdx>=0){
+        streamAudio.pause();streamAudio.src='';
+        currentStreamIdx=-1;
+        $('stream-live-badge').classList.add('hidden');
+    }
+}
+streamAudio.addEventListener('error',()=>{
+    if(currentStreamIdx>=0){
+        showToast('Se perdio la conexion del stream');
+        currentStreamIdx=-1;
+        $('stream-live-badge').classList.add('hidden');
+        if(S.radio.on&&S.tab==='radio')updateRadioAudio();
+    }
+});
 
-function tuneUp(){if(!S.radio.on)return;S.radio.freq=Math.min(108,+(S.radio.freq+0.1).toFixed(1));$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
-function tuneDown(){if(!S.radio.on)return;S.radio.freq=Math.max(88,+(S.radio.freq-0.1).toFixed(1));$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
-function seekUp(){if(!S.radio.on)return;let best=108.1,bd=999;S.radio.presets.forEach(p=>{if(p>S.radio.freq){const d=p-S.radio.freq;if(d<bd){bd=d;best=p;}}});if(best>108)best=S.radio.presets[0];S.radio.freq=Math.min(108,best);$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
-function seekDown(){if(!S.radio.on)return;let best=87.9,bd=999;S.radio.presets.forEach(p=>{if(p<S.radio.freq){const d=S.radio.freq-p;if(d<bd){bd=d;best=p;}}});if(best<88)best=S.radio.presets[S.radio.presets.length-1];S.radio.freq=Math.max(88,best);$('freq-display').textContent=S.radio.freq.toFixed(1);updateRadioAudio();}
+/* ====== RADIO ====== */
+function toggleRadio(){
+    initAudioContext();if(audioCtx.state==='suspended')audioCtx.resume();
+    S.radio.on=!S.radio.on;
+    const btn=$('radio-power'),sec=$('tab-radio');
+    if(S.radio.on){
+        btn.style.background='var(--accent)';btn.style.color='#000';btn.style.borderColor='var(--accent)';
+        btn.classList.add('pulse-glow');sec.classList.remove('radio-off');
+        tryPlayStreamForFreq();updateRadioAudio();
+    }else{
+        btn.style.background='var(--surface)';btn.style.color='var(--muted)';btn.style.borderColor='var(--border)';
+        btn.classList.remove('pulse-glow');sec.classList.add('radio-off');
+        stopStreamAudio();if(noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);
+        clearSignalBars();$('station-name').style.opacity='0';
+    }
+}
 
-function updateRadioAudio(){if(!audioCtx||!S.radio.on||S.tab!=='radio')return;let md=Infinity;S.radio.presets.forEach(p=>{md=Math.min(md,Math.abs(S.radio.freq-p));});const th=0.3;if(md<th){const cl=1-md/th;noiseGain.gain.setTargetAtTime(0.05*(1-cl*0.8),audioCtx.currentTime,0.08);const idx=S.radio.presets.findIndex(p=>Math.abs(p-S.radio.freq)<0.05);if(idx>=0){$('station-name').textContent=S.radio.names[idx];$('station-name').style.opacity='1';}}else{noiseGain.gain.setTargetAtTime(0.2,audioCtx.currentTime,0.08);$('station-name').style.opacity='0';}noiseFilter.frequency.setTargetAtTime(300+(S.radio.freq-88)*50,audioCtx.currentTime,0.1);const lv=md<th?Math.ceil((1-md/th)*5):Math.max(0,Math.ceil(5-md*8));updateSignalBars(lv);updatePresetHighlight();}
+function tuneUp(){if(!S.radio.on)return;S.radio.freq=Math.min(108,+(S.radio.freq+0.1).toFixed(1));$('freq-display').textContent=S.radio.freq.toFixed(1);stopStreamAudio();updateRadioAudio();}
+function tuneDown(){if(!S.radio.on)return;S.radio.freq=Math.max(88,+(S.radio.freq-0.1).toFixed(1));$('freq-display').textContent=S.radio.freq.toFixed(1);stopStreamAudio();updateRadioAudio();}
+function seekUp(){
+    if(!S.radio.on)return;
+    let best=108.1,bd=999;
+    S.radio.presets.forEach(p=>{if(p.freq>S.radio.freq){const d=p.freq-S.radio.freq;if(d<bd){bd=d;best=p.freq;}}});
+    if(best>108)best=S.radio.presets[0].freq;
+    S.radio.freq=best;$('freq-display').textContent=S.radio.freq.toFixed(1);
+    stopStreamAudio();tryPlayStreamForFreq();updateRadioAudio();
+}
+function seekDown(){
+    if(!S.radio.on)return;
+    let best=87.9,bd=999;
+    S.radio.presets.forEach(p=>{if(p.freq<S.radio.freq){const d=S.radio.freq-p.freq;if(d<bd){bd=d;best=p.freq;}}});
+    if(best<88)best=S.radio.presets[S.radio.presets.length-1].freq;
+    S.radio.freq=best;$('freq-display').textContent=S.radio.freq.toFixed(1);
+    stopStreamAudio();tryPlayStreamForFreq();updateRadioAudio();
+}
+
+function tryPlayStreamForFreq(){
+    const idx=S.radio.presets.findIndex(p=>Math.abs(p.freq-S.radio.freq)<0.05&&p.stream);
+    if(idx>=0)playStreamAudio(S.radio.presets[idx].stream,idx);
+}
+
+function updateRadioAudio(){
+    if(!audioCtx||!S.radio.on||S.tab!=='radio')return;
+    if(currentStreamIdx>=0)return; // El stream maneja el audio
+    let md=Infinity;
+    S.radio.presets.forEach(p=>{md=Math.min(md,Math.abs(S.radio.freq-p.freq));});
+    const th=0.3;
+    if(md<th){
+        const cl=1-md/th;
+        noiseGain.gain.setTargetAtTime(0.05*(1-cl*0.8),audioCtx.currentTime,0.08);
+        const idx=S.radio.presets.findIndex(p=>Math.abs(p.freq-S.radio.freq)<0.05);
+        if(idx>=0){$('station-name').textContent=S.radio.presets[idx].name;$('station-name').style.opacity='1';}
+    }else{
+        noiseGain.gain.setTargetAtTime(0.2,audioCtx.currentTime,0.08);
+        $('station-name').style.opacity='0';
+    }
+    noiseFilter.frequency.setTargetAtTime(300+(S.radio.freq-88)*50,audioCtx.currentTime,0.1);
+    const lv=md<th?Math.ceil((1-md/th)*5):Math.max(0,Math.ceil(5-md*8));
+    updateSignalBars(lv);updatePresetHighlight();
+}
 
 function updateSignalBars(lv){const bars=$('signal-bars').children;for(let i=0;i<bars.length;i++)bars[i].classList.toggle('active',i<lv);}
 function clearSignalBars(){const bars=$('signal-bars').children;for(let i=0;i<bars.length;i++)bars[i].classList.remove('active');}
 
-/* Presets */
-function buildPresets(){const g=$('presets-grid');g.innerHTML='';S.radio.presets.forEach((freq,idx)=>{const btn=document.createElement('button');btn.className='preset-btn h-12 rounded-lg font-digital text-sm font-bold';btn.style.cssText='background:var(--surface);color:var(--text);border:1px solid var(--border)';btn.id='preset-'+idx;btn.textContent=freq.toFixed(1);btn.setAttribute('aria-label','Preset '+(idx+1));let timer,lp=false;const start=()=>{lp=false;timer=setTimeout(()=>{lp=true;S.radio.presets[idx]=S.radio.freq;btn.textContent=S.radio.freq.toFixed(1);savePresets();showToast('Guardado: '+S.radio.freq.toFixed(1)+' MHz');},700);};const end=()=>clearTimeout(timer);btn.addEventListener('click',()=>{if(lp){lp=false;return;}if(!S.radio.on)return;S.radio.freq=freq;$('freq-display').textContent=freq.toFixed(1);updateRadioAudio();});btn.addEventListener('mousedown',start);btn.addEventListener('mouseup',end);btn.addEventListener('mouseleave',end);btn.addEventListener('touchstart',e=>{e.preventDefault();start();},{passive:false});btn.addEventListener('touchend',end);btn.addEventListener('touchcancel',end);g.appendChild(btn);});}
-function updatePresetHighlight(){S.radio.presets.forEach((f,i)=>{const b=$('preset-'+i);if(b)b.classList.toggle('active-preset',Math.abs(f-S.radio.freq)<0.05);});}
-function savePresets(){localStorage.setItem('rt_presets',JSON.stringify(S.radio.presets));}
-function loadPresets(){const s=localStorage.getItem('rt_presets');if(s)try{S.radio.presets=JSON.parse(s);}catch(e){}buildPresets();}
+/* ====== PRESETS ====== */
+function buildPresets(){
+    const c=$('presets-container');c.innerHTML='';
+    for(let row=0;row<2;row++){
+        const g=document.createElement('div');g.className='grid grid-cols-6 gap-2';
+        for(let col=0;col<6;col++){
+            const idx=row*6+col;if(idx>=S.radio.presets.length)break;
+            const p=S.radio.presets[idx];
+            /* Contenedor relativo para el icono de stream */
+            const wrap=document.createElement('div');wrap.className='relative';
+            const btn=document.createElement('button');
+            btn.className='preset-btn h-12 rounded-lg font-digital text-[11px] font-bold w-full';
+            btn.style.cssText='background:var(--surface);color:var(--text);border:1px solid var(--border)';
+            if(p.stream)btn.classList.add('has-stream');
+            btn.id='preset-'+idx;
+            btn.innerHTML='<span class="block text-xs opacity-60">'+p.freq.toFixed(1)+'</span><span class="block truncate text-[10px]">'+p.name+'</span>';
+            btn.setAttribute('aria-label',p.name);
+            /* Click normal: sintonizar */
+            let timer,lp=false;
+            const onDown=()=>{lp=false;timer=setTimeout(()=>{lp=true;S.radio.presets[idx].freq=S.radio.freq;
+                buildPresets();savePresets();showToast('Guardado: '+S.radio.freq.toFixed(1)+' MHz en '+p.name);},700);};
+            const onUp=()=>{clearTimeout(timer);};
+            btn.addEventListener('click',e=>{
+                if(lp){lp=false;return;}
+                if(!S.radio.on)return;
+                S.radio.freq=p.freq;$('freq-display').textContent=p.freq.toFixed(1);
+                stopStreamAudio();
+                if(p.stream){playStreamAudio(p.stream,idx);updateSignalBars(5);}
+                else updateRadioAudio();
+                updatePresetHighlight();
+            });
+            btn.addEventListener('mousedown',onDown);btn.addEventListener('mouseup',onUp);btn.addEventListener('mouseleave',onUp);
+            btn.addEventListener('touchstart',e=>{e.preventDefault();onDown();},{passive:false});
+            btn.addEventListener('touchend',onUp);btn.addEventListener('touchcancel',onUp);
+            wrap.appendChild(btn);
+            /* Boton de configurar stream */
+            const cfg=document.createElement('button');
+            cfg.className='absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-[8px]';
+            cfg.style.cssText=p.stream?'background:var(--success);color:#000':'background:var(--border);color:var(--muted)';
+            cfg.innerHTML='<i class="fas fa-'+(p.stream?'link':'cog')+'"></i>';
+            cfg.setAttribute('aria-label','Configurar stream');
+            cfg.addEventListener('click',e=>{e.stopPropagation();openStreamModal(idx);});
+            wrap.appendChild(cfg);
+            g.appendChild(wrap);
+        }
+        c.appendChild(g);
+    }
+}
+function updatePresetHighlight(){S.radio.presets.forEach((p,i)=>{const b=$('preset-'+i);if(b)b.classList.toggle('active-preset',Math.abs(p.freq-S.radio.freq)<0.05);});}
+function savePresets(){localStorage.setItem('rt_presets_aqp',JSON.stringify(S.radio.presets));}
+function loadPresets(){const s=localStorage.getItem('rt_presets_aqp');if(s)try{S.radio.presets=JSON.parse(s);}catch(e){}buildPresets();}
 
-/* Espectro */
-function initSpectrum(){const canvas=$('spectrum'),ctx=canvas.getContext('2d'),bl=analyser.frequencyBinCount,data=new Uint8Array(bl);function draw(){requestAnimationFrame(draw);const w=canvas.width=canvas.offsetWidth*2,h=canvas.height=canvas.offsetHeight*2;ctx.clearRect(0,0,w,h);analyser.getByteFrequencyData(data);const bw=w/bl,ac=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();for(let i=0;i<bl;i++){const v=S.radio.on?data[i]/255:0,bh=v*h*0.9,x=i*bw;ctx.fillStyle=ac;ctx.globalAlpha=0.6+v*0.4;ctx.fillRect(x,h-bh,Math.max(1,bw-1),bh);ctx.globalAlpha=0.15;ctx.fillRect(x,h,Math.max(1,bw-1),bh*0.3);}ctx.globalAlpha=1;if(!S.radio.on){const t=Date.now()/1000;ctx.beginPath();ctx.strokeStyle=ac;ctx.globalAlpha=0.15;ctx.lineWidth=2;for(let x=0;x<w;x++){const y=h/2+Math.sin(x/30+t*2)*8+Math.sin(x/15+t)*4;x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}ctx.stroke();ctx.globalAlpha=1;}}draw();}
+/* ====== MODAL STREAM ====== */
+function openStreamModal(idx){
+    S.streamEditIdx=idx;const p=S.radio.presets[idx];
+    $('modal-title').textContent='Configurar Stream';
+    $('modal-freq').textContent=p.freq.toFixed(1)+' MHz - '+p.name;
+    $('stream-url-input').value=p.stream||'';
+    $('stream-modal').style.display='flex';
+}
+function closeStreamModal(){$('stream-modal').style.display='none';S.streamEditIdx=-1;}
+function saveStreamUrl(){
+    const url=$('stream-url-input').value.trim();if(!url){showToast('Pega una URL de streaming');return;}
+    S.radio.presets[S.streamEditIdx].stream=url;
+    savePresets();buildPresets();closeStreamModal();
+    showToast('Stream guardado para '+S.radio.presets[S.streamEditIdx].name);
+}
+function deleteStreamUrl(){
+    S.radio.presets[S.streamEditIdx].stream='';
+    if(currentStreamIdx===S.streamEditIdx)stopStreamAudio();
+    savePresets();buildPresets();closeStreamModal();
+    showToast('Stream eliminado');
+}
+/* Cerrar modal al clicar fuera */
+ $('stream-modal').addEventListener('click',e=>{if(e.target===$('stream-modal'))closeStreamModal();});
+
+/* ====== ESPECTRO ====== */
+function initSpectrum(){
+    const canvas=$('spectrum'),ctx=canvas.getContext('2d'),bl=analyser.frequencyBinCount,data=new Uint8Array(bl);
+    function draw(){
+        requestAnimationFrame(draw);
+        const w=canvas.width=canvas.offsetWidth*2,h=canvas.height=canvas.offsetHeight*2;
+        ctx.clearRect(0,0,w,h);
+        analyser.getByteFrequencyData(data);
+        const bw=w/bl,ac=getComputedStyle(document.documentElement).getPropertyValue('--accent').trim();
+        for(let i=0;i<bl;i++){
+            const v=(S.radio.on&&currentStreamIdx>=0)?data[i]/255:(S.radio.on?data[i]/255:0);
+            const bh=v*h*0.9,x=i*bw;
+            ctx.fillStyle=ac;ctx.globalAlpha=0.6+v*0.4;
+            ctx.fillRect(x,h-bh,Math.max(1,bw-1),bh);
+            ctx.globalAlpha=0.15;ctx.fillRect(x,h,Math.max(1,bw-1),bh*0.3);
+        }
+        ctx.globalAlpha=1;
+        if(!S.radio.on){
+            const t=Date.now()/1000;ctx.beginPath();ctx.strokeStyle=ac;ctx.globalAlpha=0.15;ctx.lineWidth=2;
+            for(let x=0;x<w;x++){const y=h/2+Math.sin(x/30+t*2)*8+Math.sin(x/15+t)*4;x===0?ctx.moveTo(x,y):ctx.lineTo(x,y);}
+            ctx.stroke();ctx.globalAlpha=1;
+        }
+    }draw();
+}
 
 /* Deslizar para sintonizar */
-(function(){const el=$('freq-display');let sy=null;el.addEventListener('touchstart',e=>{sy=e.touches[0].clientY;},{passive:true});el.addEventListener('touchmove',e=>{if(!sy||!S.radio.on)return;const d=sy-e.touches[0].clientY;if(Math.abs(d)>15){d>0?tuneUp():tuneDown();sy=e.touches[0].clientY;}},{passive:true});el.addEventListener('touchend',()=>{sy=null;},{passive:true});})();
+(function(){const el=$('freq-display');let sy=null;
+el.addEventListener('touchstart',e=>{sy=e.touches[0].clientY;},{passive:true});
+el.addEventListener('touchmove',e=>{if(!sy||!S.radio.on)return;const d=sy-e.touches[0].clientY;if(Math.abs(d)>15){d>0?tuneUp():tuneDown();sy=e.touches[0].clientY;}},{passive:true});
+el.addEventListener('touchend',()=>{sy=null;},{passive:true});
+})();
 
 /* ====== VOLUMEN ====== */
-function setVolume(v){S.vol=parseInt(v);audio.volume=S.vol/100;if(masterGain)masterGain.gain.setTargetAtTime(S.vol/100,audioCtx.currentTime,0.05);$('volume-display').textContent=S.vol;const i=$('vol-icon');i.className=S.vol===0?'fas fa-volume-xmark text-sm':S.vol<40?'fas fa-volume-low text-sm':'fas fa-volume-high text-sm';localStorage.setItem('rt_vol',S.vol);}
+function setVolume(v){
+    S.vol=parseInt(v);audio.volume=S.vol/100;streamAudio.volume=S.vol/100;
+    if(masterGain)masterGain.gain.setTargetAtTime(S.vol/100,audioCtx.currentTime,0.05);
+    $('volume-display').textContent=S.vol;
+    const i=$('vol-icon');i.className=S.vol===0?'fas fa-volume-xmark text-sm':S.vol<40?'fas fa-volume-low text-sm':'fas fa-volume-high text-sm';
+    localStorage.setItem('rt_vol',S.vol);
+}
  $('volume-slider').addEventListener('input',function(){setVolume(this.value);});
 const sv=localStorage.getItem('rt_vol');if(sv){$('volume-slider').value=sv;setVolume(sv);}
 
 /* ====== MUSICA ====== */
- $('music-files').addEventListener('change',function(e){const files=Array.from(e.target.files);if(!files.length)return;initAudioContext();files.forEach(f=>{S.music.list.push({name:f.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(f)});});renderPlaylist();if(S.music.idx===-1){S.music.idx=0;loadTrack();}showToast(files.length+' archivo(s) cargado(s)');});
-
-function renderPlaylist(){const el=$('playlist');if(!S.music.list.length){el.innerHTML='<div class="p-4 text-center font-ui" style="color:var(--muted)">La playlist aparecera aqui</div>';return;}el.innerHTML=S.music.list.map((t,i)=>'<div class="playlist-item px-4 py-3 flex items-center gap-3 '+(i===S.music.idx?'active-track':'')+'" onclick="playTrack('+i+')"><span class="font-digital text-xs w-6 text-center" style="color:var(--muted)">'+(i===S.music.idx&&S.music.playing?'<i class="fas fa-volume-high" style="color:var(--accent)"></i>':(i+1))+'</span><span class="font-ui font-semibold truncate flex-1">'+t.name+'</span><button onclick="event.stopPropagation();removeTrack('+i+')" class="w-8 h-8 rounded flex items-center justify-center" style="color:var(--muted)" aria-label="Eliminar"><i class="fas fa-times"></i></button></div>').join('');}
-
+ $('music-files').addEventListener('change',function(e){
+    const files=Array.from(e.target.files);if(!files.length)return;initAudioContext();
+    files.forEach(f=>{S.music.list.push({name:f.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(f)});});
+    renderPlaylist();if(S.music.idx===-1){S.music.idx=0;loadTrack();}
+    showToast(files.length+' archivo(s) cargado(s)');
+});
+function renderPlaylist(){
+    const el=$('playlist');if(!S.music.list.length){el.innerHTML='<div class="p-4 text-center font-ui" style="color:var(--muted)">La playlist aparecera aqui</div>';return;}
+    el.innerHTML=S.music.list.map((t,i)=>'<div class="playlist-item px-4 py-3 flex items-center gap-3 '+(i===S.music.idx?'active-track':'')+'" onclick="playTrack('+i+')"><span class="font-digital text-xs w-6 text-center" style="color:var(--muted)">'+(i===S.music.idx&&S.music.playing?'<i class="fas fa-volume-high" style="color:var(--accent)"></i>':(i+1))+'</span><span class="font-ui font-semibold truncate flex-1">'+t.name+'</span><button onclick="event.stopPropagation();removeTrack('+i+')" class="w-8 h-8 rounded flex items-center justify-center" style="color:var(--muted)"><i class="fas fa-times"></i></button></div>').join('');
+}
 function loadTrack(){if(S.music.idx<0||S.music.idx>=S.music.list.length)return;const t=S.music.list[S.music.idx];audio.src=t.url;$('track-name').textContent=t.name;$('track-info').textContent='Track '+(S.music.idx+1)+' de '+S.music.list.length;$('mini-track').textContent=t.name;renderPlaylist();}
-function playTrack(idx){S.music.idx=idx;loadTrack();audio.play().catch(()=>{});S.music.playing=true;updatePlayBtn();}
-function togglePlay(){if(!S.music.list.length)return;if(S.music.idx===-1){S.music.idx=0;loadTrack();}if(S.music.playing)audio.pause();else audio.play().catch(()=>{});S.music.playing=!S.music.playing;updatePlayBtn();}
+function playTrack(idx){S.music.idx=idx;loadTrack();stopStreamAudio();audio.play().catch(()=>{});S.music.playing=true;updatePlayBtn();}
+function togglePlay(){if(!S.music.list.length)return;if(S.music.idx===-1){S.music.idx=0;loadTrack();}stopStreamAudio();if(S.music.playing)audio.pause();else audio.play().catch(()=>{});S.music.playing=!S.music.playing;updatePlayBtn();}
 function nextTrack(){if(!S.music.list.length)return;S.music.idx=(S.music.idx+1)%S.music.list.length;loadTrack();if(S.music.playing)audio.play().catch(()=>{});updatePlayBtn();}
 function prevTrack(){if(!S.music.list.length)return;if(audio.currentTime>3){audio.currentTime=0;return;}S.music.idx=(S.music.idx-1+S.music.list.length)%S.music.list.length;loadTrack();if(S.music.playing)audio.play().catch(()=>{});updatePlayBtn();}
 function removeTrack(idx){URL.revokeObjectURL(S.music.list[idx].url);S.music.list.splice(idx,1);if(idx===S.music.idx){if(S.music.list.length){S.music.idx=Math.min(idx,S.music.list.length-1);loadTrack();if(S.music.playing)audio.play().catch(()=>{});}else{S.music.idx=-1;S.music.playing=false;$('track-name').textContent='Ningun archivo cargado';$('track-info').textContent='Carga musica para comenzar';audio.src='';}}else if(idx<S.music.idx)S.music.idx--;renderPlaylist();updatePlayBtn();}
@@ -298,50 +571,92 @@ function fmtTime(s){const m=Math.floor(s/60);return m+':'+String(Math.floor(s%60
 
 /* ====== MAPA Y GPS ====== */
 let map,darkTiles,lightTiles,userMarker,searchMarker;
-function initMap(){darkTiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'OSM/CARTO',maxZoom:19});lightTiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'OSM/CARTO',maxZoom:19});map=L.map('map-container',{layers:[S.night?darkTiles:lightTiles],zoomControl:false});L.control.zoom({position:'topright'}).addTo(map);map.setView([-34.6037,-58.3816],13);if('geolocation' in navigator){navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],15);},()=>{},{enableHighAccuracy:true,timeout:5000});}}
+function initMap(){
+    darkTiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'OSM/CARTO',maxZoom:19});
+    lightTiles=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{attribution:'OSM/CARTO',maxZoom:19});
+    map=L.map('map-container',{layers:[S.night?darkTiles:lightTiles],zoomControl:false});
+    L.control.zoom({position:'topright'}).addTo(map);
+    /* Centrar en Arequipa */
+    map.setView([-16.4090,-71.5375],13);
+    if('geolocation' in navigator){
+        navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],15);},()=>{},{enableHighAccuracy:true,timeout:5000});
+    }
+}
 function updateMapTiles(){if(!map)return;const cur=S.night?darkTiles:lightTiles,oth=S.night?lightTiles:darkTiles;if(map.hasLayer(oth))map.removeLayer(oth);if(!map.hasLayer(cur))map.addLayer(cur);}
-function startGPS(){if(!('geolocation' in navigator))return;if(S.gps.watch)navigator.geolocation.clearWatch(S.gps.watch);S.gps.watch=navigator.geolocation.watchPosition(p=>{S.gps.active=true;S.gps.lat=p.coords.latitude;S.gps.lng=p.coords.longitude;S.gps.speed=p.coords.speed?Math.round(p.coords.speed*3.6):0;if(!userMarker){userMarker=L.circleMarker([S.gps.lat,S.gps.lng],{radius:8,fillColor:'#F59E0B',fillOpacity:1,color:'#fff',weight:3}).addTo(map);map.setView([S.gps.lat,S.gps.lng],15);}else{userMarker.setLatLng([S.gps.lat,S.gps.lng]);}$('speed-value').textContent=S.gps.speed;const circ=163.36,off=circ-(Math.min(S.gps.speed,120)/120)*circ;$('speed-arc').style.strokeDashoffset=off;$('gps-status').innerHTML='<i class="fas fa-satellite-dish mr-1" style="color:var(--success)"></i> GPS activo';$('gps-status').style.color='var(--success)';},()=>{$('gps-status').innerHTML='<i class="fas fa-satellite-dish mr-1" style="color:var(--danger)"></i> Error GPS';$('gps-status').style.color='var(--danger)';},{enableHighAccuracy:true,maximumAge:1000});}
-function centerMap(){if(S.gps.lat)map.setView([S.gps.lat,S.gps.lng],16,{animate:true});else if('geolocation' in navigator)navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],16,{animate:true});},()=>showToast('No se pudo obtener ubicacion'),{enableHighAccuracy:true});else showToast('GPS no disponible');}
-
+function startGPS(){
+    if(!('geolocation' in navigator))return;
+    if(S.gps.watch)navigator.geolocation.clearWatch(S.gps.watch);
+    S.gps.watch=navigator.geolocation.watchPosition(p=>{
+        S.gps.active=true;S.gps.lat=p.coords.latitude;S.gps.lng=p.coords.longitude;
+        S.gps.speed=p.coords.speed?Math.round(p.coords.speed*3.6):0;
+        if(!userMarker){userMarker=L.circleMarker([S.gps.lat,S.gps.lng],{radius:8,fillColor:'#F59E0B',fillOpacity:1,color:'#fff',weight:3}).addTo(map);map.setView([S.gps.lat,S.gps.lng],15);}
+        else userMarker.setLatLng([S.gps.lat,S.gps.lng]);
+        $('speed-value').textContent=S.gps.speed;
+        const circ=163.36,off=circ-(Math.min(S.gps.speed,120)/120)*circ;
+        $('speed-arc').style.strokeDashoffset=off;
+        $('gps-status').innerHTML='<i class="fas fa-satellite-dish mr-1" style="color:var(--success)"></i> GPS activo';$('gps-status').style.color='var(--success)';
+    },()=>{
+        $('gps-status').innerHTML='<i class="fas fa-satellite-dish mr-1" style="color:var(--danger)"></i> Error GPS';$('gps-status').style.color='var(--danger)';
+    },{enableHighAccuracy:true,maximumAge:1000});
+}
+function centerMap(){
+    if(S.gps.lat)map.setView([S.gps.lat,S.gps.lng],16,{animate:true});
+    else if('geolocation' in navigator)navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],16,{animate:true});},()=>showToast('No se pudo obtener ubicacion'),{enableHighAccuracy:true});
+    else showToast('GPS no disponible');
+}
 let searchTimeout;
  $('map-search').addEventListener('input',function(){clearTimeout(searchTimeout);const q=this.value.trim();if(q.length<3){$('search-results').classList.remove('visible');return;}searchTimeout=setTimeout(()=>doSearch(q),500);});
  $('map-search').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();searchAddress();}});
-async function doSearch(q){try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q)+'&limit=5&accept-language=es');const d=await r.json();const el=$('search-results');if(!d.length){el.innerHTML='<div class="search-result-item" style="color:var(--muted)">Sin resultados</div>';el.classList.add('visible');return;}el.innerHTML=d.map(r=>'<div class="search-result-item" onclick="goToResult('+r.lat+','+r.lon+',this.dataset.name)" data-name=\''+r.display_name.replace(/'/g,"&#39;")+'\'>'+r.display_name+'</div>').join('');el.classList.add('visible');}catch(e){}}
+async function doSearch(q){
+    try{
+        const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q+' Arequipa Peru')+'&limit=5&accept-language=es');
+        const d=await r.json();const el=$('search-results');
+        if(!d.length){el.innerHTML='<div class="search-result-item" style="color:var(--muted)">Sin resultados</div>';el.classList.add('visible');return;}
+        el.innerHTML=d.map(r=>'<div class="search-result-item" onclick="goToResult('+r.lat+','+r.lon+',this)" data-name=\''+r.display_name.replace(/'/g,"&#39;")+'\'>'+r.display_name+'</div>').join('');
+        el.classList.add('visible');
+    }catch(e){}
+}
 function searchAddress(){const q=$('map-search').value.trim();if(q.length>=3)doSearch(q);}
-function goToResult(lat,lon,name){$('search-results').classList.remove('visible');if(searchMarker)map.removeLayer(searchMarker);searchMarker=L.marker([lat,lon]).addTo(map).bindPopup(name).openPopup();map.setView([lat,lon],16,{animate:true});}
+function goToResult(lat,lon,el){
+    $('search-results').classList.remove('visible');
+    const name=el.dataset.name||'';
+    if(searchMarker)map.removeLayer(searchMarker);
+    searchMarker=L.marker([lat,lon]).addTo(map).bindPopup(name).openPopup();
+    map.setView([lat,lon],16,{animate:true});
+}
 document.addEventListener('click',e=>{if(!e.target.closest('#map-search')&&!e.target.closest('#search-results'))$('search-results').classList.remove('visible');});
 
 /* ====== HERRAMIENTAS ====== */
 function switchTool(tool){document.querySelectorAll('.tool-content').forEach(e=>e.classList.add('hidden'));$('tool-'+tool).classList.remove('hidden');document.querySelectorAll('.tool-tab').forEach(b=>{b.style.background='var(--surface)';b.style.color='var(--text)';});$('tool-tab-'+tool).style.background='var(--accent)';$('tool-tab-'+tool).style.color='#000';}
-
-/* Notas */
  $('notas-text').value=localStorage.getItem('rt_notas')||'';
  $('notas-text').addEventListener('input',()=>{localStorage.setItem('rt_notas',$('notas-text').value);});
-
-/* Calculadora */
 function calcInput(v){const c=S.calc;if(v==='C'){c.disp='0';c.first=null;c.op=null;c.wait=false;}else if(v==='±'){c.disp=String(-parseFloat(c.disp));}else if(v==='%'){c.disp=String(parseFloat(c.disp)/100);}else if(['+','-','×','÷'].includes(v)){if(c.first!==null&&!c.wait)c.disp=String(calcDo(c.first,parseFloat(c.disp),c.op));c.first=parseFloat(c.disp);c.op=v;c.wait=true;}else if(v==='='){if(c.first!==null&&c.op){c.disp=String(calcDo(c.first,parseFloat(c.disp),c.op));c.first=null;c.op=null;c.wait=false;}}else{if(c.wait){c.disp=v==='.'?'0.':v;c.wait=false;}else{if(v==='.'&&c.disp.includes('.'))return;c.disp=c.disp==='0'&&v!=='.'?v:c.disp+v;}}$('calc-display').textContent=c.disp;}
 function calcDo(a,b,op){switch(op){case'+':return+(a+b).toFixed(10);case'-':return+(a-b).toFixed(10);case'×':return+(a*b).toFixed(10);case'÷':return b!==0?+(a/b).toFixed(10):'Error';}return b;}
-
-/* Cronometro */
 function cronoToggle(){if(S.crono.on){clearInterval(S.crono.interval);S.crono.elapsed+=Date.now()-S.crono.start;S.crono.on=false;$('crono-start-btn').innerHTML='<i class="fas fa-play"></i>';$('crono-start-btn').style.background='var(--success)';}else{S.crono.start=Date.now();S.crono.on=true;S.crono.interval=setInterval(updateCrono,30);$('crono-start-btn').innerHTML='<i class="fas fa-pause"></i>';$('crono-start-btn').style.background='var(--accent)';}}
 function cronoLap(){if(!S.crono.on)return;S.crono.laps.push(S.crono.elapsed+Date.now()-S.crono.start);renderLaps();}
 function cronoReset(){clearInterval(S.crono.interval);S.crono.on=false;S.crono.elapsed=0;S.crono.laps=[];$('crono-display').textContent='00:00.00';$('crono-start-btn').innerHTML='<i class="fas fa-play"></i>';$('crono-start-btn').style.background='var(--success)';$('crono-laps').innerHTML='';}
 function updateCrono(){$('crono-display').textContent=fmtCrono(S.crono.elapsed+Date.now()-S.crono.start);}
 function fmtCrono(ms){const m=Math.floor(ms/60000),s=Math.floor((ms%60000)/1000),cs=Math.floor((ms%1000)/10);return String(m).padStart(2,'0')+':'+String(s).padStart(2,'0')+'.'+String(cs).padStart(2,'0');}
 function renderLaps(){$('crono-laps').innerHTML=S.crono.laps.map((l,i)=>'<div class="flex justify-between px-4 py-2 rounded-lg font-ui" style="background:var(--surface)"><span style="color:var(--muted)">Vuelta '+(i+1)+'</span><span class="font-digital text-sm" style="color:var(--accent)">'+fmtCrono(l)+'</span></div>').reverse().join('');}
-
-/* Viajes */
 function loadViajes(){const s=localStorage.getItem('rt_viajes');if(s)try{S.viajes=JSON.parse(s);}catch(e){S.viajes=[];}const today=new Date().toDateString();S.viajes=S.viajes.filter(v=>new Date(v.date).toDateString()===today);renderViajes();}
-function addViaje(){const nota=$('viaje-nota').value.trim();if(!nota){showToast('Escribi una nota para el viaje');return;}const cronoTime=S.crono.on?fmtCrono(S.crono.elapsed+Date.now()-S.crono.start):null;S.viajes.push({date:new Date().toISOString(),nota,crono:cronoTime});$('viaje-nota').value='';localStorage.setItem('rt_viajes',JSON.stringify(S.viajes));renderViajes();showToast('Viaje registrado');}
+function addViaje(){const nota=$('viaje-nota').value.trim();if(!nota){showToast('Escribi una nota para el viaje');return;}S.viajes.push({date:new Date().toISOString(),nota,crono:S.crono.on?fmtCrono(S.crono.elapsed+Date.now()-S.crono.start):null});$('viaje-nota').value='';localStorage.setItem('rt_viajes',JSON.stringify(S.viajes));renderViajes();showToast('Viaje registrado');}
 function removeViaje(i){S.viajes.splice(i,1);localStorage.setItem('rt_viajes',JSON.stringify(S.viajes));renderViajes();}
-function renderViajes(){const el=$('viajes-list');$('viajes-count').textContent=S.viajes.length?S.viajes.length+' viaje(s) hoy':'';if(!S.viajes.length){el.innerHTML='<div class="text-center font-ui py-8" style="color:var(--muted)">No hay viajes registrados</div>';return;}el.innerHTML=S.viajes.map((v,i)=>{const t=new Date(v.date);const time=t.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});return'<div class="viaje-card"><div class="flex justify-between items-start"><div class="flex-1"><div class="font-ui font-bold">'+v.nota+'</div><div class="font-ui text-sm mt-1" style="color:var(--muted)"><i class="fas fa-clock mr-1"></i>'+time+(v.crono?' &nbsp; <i class="fas fa-stopwatch mr-1"></i>'+v.crono:'')+'</div></div><button onclick="removeViaje('+i+')" class="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style="color:var(--muted)" aria-label="Eliminar"><i class="fas fa-times"></i></button></div></div>';}).join('');}
+function renderViajes(){
+    const el=$('viajes-list');$('viajes-count').textContent=S.viajes.length?S.viajes.length+' viaje(s) hoy':'';
+    if(!S.viajes.length){el.innerHTML='<div class="text-center font-ui py-8" style="color:var(--muted)">No hay viajes registrados</div>';return;}
+    el.innerHTML=S.viajes.map((v,i)=>{const t=new Date(v.date);const time=t.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});return'<div class="viaje-card"><div class="flex justify-between items-start"><div class="flex-1"><div class="font-ui font-bold">'+v.nota+'</div><div class="font-ui text-sm mt-1" style="color:var(--muted)"><i class="fas fa-clock mr-1"></i>'+time+(v.crono?' &nbsp;<i class="fas fa-stopwatch mr-1"></i>'+v.crono:'')+'</div></div><button onclick="removeViaje('+i+')" class="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style="color:var(--muted)"><i class="fas fa-times"></i></button></div></div>';}).join('');
+}
 
 /* ====== TOAST ====== */
 let toastTimer;
 function showToast(msg){const t=$('toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2500);}
 
-/* ====== INICIALIZACION ====== */
-function init(){loadPresets();initMap();startGPS();loadViajes();}
+/* ====== INICIO ====== */
+function init(){
+    loadPresets();
+    $('freq-display').textContent=S.radio.freq.toFixed(1);
+    initMap();startGPS();loadViajes();
+}
 init();
 </script>
 </body>
