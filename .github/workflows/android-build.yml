@@ -8,26 +8,25 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Descargar código
+      - name: Descargar codigo
         uses: actions/checkout@v4
 
-      - name: Instalar Node.js
-        uses: actions/setup-node@v3
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
       - name: Instalar Cordova
         run: npm install -g cordova
 
-      - name: Preparar Plataforma Android
-        run: |
-          cordova platform add android
-          
-      - name: Compilar APK (Debug)
+      - name: Preparar Android
+        run: cordova platform add android
+
+      - name: Compilar APK
         run: cordova build android
 
-      - name: Subir APK generado
-        uses: actions/upload-artifact@v3
+      - name: Buscar y Subir APK
+        uses: actions/upload-artifact@v4
         with:
-          name: radiotaxi-apk
-          path: platforms/android/app/build/outputs/apk/debug/app-debug.apk
+          name: radiotaxi-instalador
+          path: "**/build/outputs/apk/debug/*.apk"
