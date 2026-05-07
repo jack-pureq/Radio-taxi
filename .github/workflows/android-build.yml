@@ -2,7 +2,7 @@ name: Generar APK de Radiotaxi
 on:
   push:
     branches: [ principal ]
-  workflow_dispatch
+  workflow_dispatch:
 
 jobs:
   build:
