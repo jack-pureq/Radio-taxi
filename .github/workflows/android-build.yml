@@ -1,8 +1,8 @@
 name: Generar APK de Radiotaxi
 on:
   push:
-    branches: [ principal ] # Nota: En tu imagen dice "principal", no "main"
-    workflow_dispatch
+    branches: [ principal ]
+  workflow_dispatch
 
 jobs:
   build:
