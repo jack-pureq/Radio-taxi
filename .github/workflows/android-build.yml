@@ -2,7 +2,7 @@ name: Generar APK de Radiotaxi
 on:
   push:
     branches: [ principal ] # Nota: En tu imagen dice "principal", no "main"
-    wordflow_dispatch
+    workflow_dispatch
 
 jobs:
   build:
