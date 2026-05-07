@@ -1,1 +1,514 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>RadioTaxi Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>tailwind.config={theme:{extend:{fontFamily:{digital:['Orbitron','monospace'],ui:['Rajdhani','sans-serif']}}}}</script>
+    <style>
+        :root{
+            --bg:#050508;--card:rgba(12,12,20,0.85);--surface:rgba(25,25,40,0.7);
+            --border:rgba(0,255,170,0.12);--accent:#00FFAA;--accent2:#00D4FF;
+            --accent-glow:rgba(0,255,170,0.4);--accent2-glow:rgba(0,212,255,0.3);
+            --text:#E0E0E0;--muted:#556;--danger:#FF3366;--success:#00FF88;--warning:#FFB800;
+        }
+        *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+        body{font-family:'Rajdhani',sans-serif;background:var(--bg);color:var(--text);overflow:hidden;height:100vh;height:100dvh;touch-action:manipulation}
+        ::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
 
+        /* Fondo animado */
+        .bg-mesh{position:fixed;inset:0;background:
+            radial-gradient(ellipse at 20% 50%,rgba(0,255,170,0.04) 0%,transparent 50%),
+            radial-gradient(ellipse at 80% 20%,rgba(0,212,255,0.03) 0%,transparent 50%),
+            radial-gradient(ellipse at 50% 80%,rgba(255,51,102,0.02) 0%,transparent 50%);
+            pointer-events:none;z-index:0}
+        .bg-grid{position:fixed;inset:0;background-image:
+            linear-gradient(rgba(0,255,170,0.03) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(0,255,170,0.03) 1px,transparent 1px);
+            background-size:50px 50px;pointer-events:none;z-index:0}
+
+        /* Layout principal - 3 columnas */
+        .dashboard{
+            display:grid;
+            grid-template-columns:1fr 1fr 1fr;
+            grid-template-rows:auto 1fr auto;
+            gap:6px;
+            height:100vh;height:100dvh;
+            padding:6px;
+            position:relative;z-index:1;
+        }
+        .dash-header{grid-column:1/-1}
+        .dash-footer{grid-column:1/-1}
+
+        /* Panel */
+        .panel{
+            background:var(--card);
+            border:1px solid var(--border);
+            border-radius:12px;
+            display:flex;flex-direction:column;
+            overflow:hidden;
+            position:relative;
+            backdrop-filter:blur(10px);
+        }
+        .panel::before{
+            content:'';position:absolute;top:0;left:0;right:0;height:1px;
+            background:linear-gradient(90deg,transparent,var(--accent),transparent);
+            opacity:0.5;
+        }
+        .panel-header{
+            padding:8px 12px;
+            display:flex;align-items:center;justify-content:space-between;
+            border-bottom:1px solid var(--border);
+            flex-shrink:0;
+        }
+        .panel-title{
+            font-digital text-[10px] font-bold tracking-[0.2em] uppercase;
+            color:var(--accent);
+        }
+        .panel-body{flex:1;overflow:hidden;position:relative;min-height:0}
+
+        /* Neón */
+        .neon-text{text-shadow:0 0 7px var(--accent-glow),0 0 20px var(--accent-glow)}
+        .neon-text-blue{text-shadow:0 0 7px var(--accent2-glow),0 0 20px var(--accent2-glow)}
+        .neon-border{box-shadow:0 0 8px var(--accent-glow),inset 0 0 8px rgba(0,255,170,0.05)}
+
+        /* Radio */
+        .freq-display{font-family:'Orbitron',monospace;font-size:clamp(2rem,5vw,3.5rem);font-weight:900;color:var(--accent);line-height:1}
+        .preset-btn{
+            transition:all .2s;position:relative;
+            background:var(--surface);border:1px solid var(--border);
+            border-radius:6px;padding:4px 2px;text-align:center;cursor:pointer;
+            font-family:'Rajdhani',sans-serif;
+        }
+        .preset-btn:active{transform:scale(.95)}
+        .preset-btn.active-preset{border-color:var(--accent);background:rgba(0,255,170,0.1);box-shadow:0 0 10px var(--accent-glow)}
+        .preset-btn.active-preset .p-name{color:var(--accent)}
+        .stream-dot{position:absolute;top:2px;right:2px;width:10px;height:10px;border-radius:50%;font-size:6px;display:flex;align-items:center;justify-content:center}
+        .dot-ok{background:var(--success);color:#000}
+        .dot-searching{background:var(--accent2);color:#000}
+        .dot-none{background:var(--muted);color:#000}
+        @keyframes spin{to{transform:rotate(360deg)}}.spin{animation:spin .8s linear infinite}
+        @keyframes livePulse{0%,100%{opacity:1}50%{opacity:.3}}.live-dot{animation:livePulse 1.2s ease-in-out infinite}
+        @keyframes pulseGlow{0%,100%{box-shadow:0 0 5px var(--accent-glow)}50%{box-shadow:0 0 20px var(--accent-glow),0 0 40px var(--accent-glow)}}.pulse-glow{animation:pulseGlow 2s ease-in-out infinite}
+
+        /* Velocímetro */
+        .speedo-svg{filter:drop-shadow(0 0 8px var(--accent-glow))}
+        .speed-ring-bg{stroke:rgba(0,255,170,0.08);fill:none;stroke-width:6}
+        .speed-ring-val{stroke:var(--accent);fill:none;stroke-width:6;stroke-linecap:round;transition:stroke-dashoffset .5s}
+        .speed-ring-mark{stroke:rgba(0,255,170,0.2);fill:none;stroke-width:1}
+
+        /* Musica */
+        .music-btn{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;transition:all .15s;border:none;cursor:pointer}
+        .music-btn:active{transform:scale(.9)}
+        .music-btn-main{width:52px;height:52px;background:var(--accent);color:#000;font-size:18px}
+        .music-btn-sec{background:var(--surface);color:var(--text);border:1px solid var(--border)!important;font-size:14px}
+        input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer;width:100%}
+        input[type=range]::-webkit-slider-track{height:4px;background:var(--border);border-radius:2px}
+        input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);margin-top:-5px}
+        .playlist-item{padding:8px 10px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .15s;font-size:13px;display:flex;align-items:center;gap:8px}
+        .playlist-item:hover{background:var(--surface)}
+        .playlist-item.active-track{background:rgba(0,255,170,0.08);border-left:2px solid var(--accent)}
+
+        /* Mapa */
+        #map-container{height:100%;width:100%;border-radius:0}
+        .leaflet-control-zoom{border:none!important}
+        .leaflet-control-zoom a{background:var(--card)!important;color:var(--text)!important;border:1px solid var(--border)!important;width:30px!important;height:30px!important;line-height:30px!important;font-size:14px!important}
+
+        /* Footer tools */
+        .tool-btn{
+            flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;
+            padding:6px 2px;border-radius:8px;cursor:pointer;transition:all .2s;
+            background:transparent;border:none;color:var(--muted);font-family:'Rajdhani',sans-serif;
+        }
+        .tool-btn.active{color:var(--accent)}
+        .tool-btn i{font-size:16px}
+        .tool-btn span{font-size:9px;font-weight:600;letter-spacing:0.05em}
+
+        /* Modal */
+        .modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px)}
+        .modal-box{background:var(--card);border:1px solid var(--border);border-radius:16px;padding:20px;width:90%;max-width:380px}
+        .modal-input{background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;outline:none;width:100%;height:40px;padding:0 12px;border-radius:8px;font-size:14px}
+        .modal-input:focus{border-color:var(--accent)}
+        .modal-btn{padding:10px 16px;border-radius:8px;font-family:'Rajdhani',sans-serif;font-weight:700;font-size:14px;cursor:pointer;border:none;transition:all .15s}
+        .modal-btn:active{transform:scale(.95)}
+
+        /* Toast */
+        .toast{position:fixed;top:16px;left:50%;transform:translateX(-50%) translateY(-80px);background:var(--card);border:1px solid var(--border);padding:10px 20px;border-radius:8px;z-index:10000;transition:transform .4s ease;font-size:14px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+        .toast.show{transform:translateX(-50%) translateY(0)}
+
+        /* Calculadora y notas */
+        .calc-btn{transition:all .12s;font-family:'Rajdhani',sans-serif;font-weight:600;border:none;cursor:pointer;border-radius:8px;font-size:16px}
+        .calc-btn:active{transform:scale(.92)}
+        .note-area{background:var(--surface);border:1px solid var(--border);color:var(--text);font-family:'Rajdhani',sans-serif;font-size:14px;resize:none;outline:none;border-radius:8px;padding:10px}
+        .note-area:focus{border-color:var(--accent)}
+
+        /* Overlay de herramientas */
+        .tool-overlay{position:fixed;inset:0;background:rgba(5,5,8,0.95);z-index:500;display:none;flex-direction:column;padding:10px;backdrop-filter:blur(10px)}
+        .tool-overlay.visible{display:flex}
+
+        /* CELULAR: una sola columna */
+        @media(max-width:767px){
+            .dashboard{grid-template-columns:1fr;grid-template-rows:auto 1fr auto auto;gap:4px;padding:4px}
+            .panel-map{min-height:0}
+            .panel-speedo{display:none}
+        }
+        /* TABLET: 2 columnas (mapa + velocidad, radio + musica) */
+        @media(min-width:768px)and(max-width:1023px){
+            .dashboard{grid-template-columns:1.2fr 0.8fr;grid-template-rows:auto 1fr 1fr auto;gap:5px;padding:5px}
+            .dash-header{grid-column:1/-1}.dash-footer{grid-column:1/-1}
+            .panel-map{grid-row:2/4}
+            .panel-speedo{display:none}
+        }
+
+        @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+    </style>
+</head>
+<body>
+    <div class="bg-mesh"></div>
+    <div class="bg-grid"></div>
+    <div id="toast" class="toast"></div>
+
+    <!-- Modal stream manual -->
+    <div id="stream-modal" class="modal-overlay" style="display:none">
+        <div class="modal-box">
+            <div class="font-digital text-xs font-bold tracking-widest mb-1" style="color:var(--accent)">STREAM MANUAL</div>
+            <div class="font-ui text-sm mb-4" style="color:var(--muted)" id="modal-freq"></div>
+            <input type="text" id="stream-url-input" class="modal-input mb-2" placeholder="https://...">
+            <p class="text-xs mb-4" style="color:var(--muted)">Solo si la busqueda automatica fallo.</p>
+            <div class="flex gap-2">
+                <button onclick="saveManualStream()" class="modal-btn flex-1" style="background:var(--accent);color:#000">Guardar</button>
+                <button onclick="deleteStreamUrl()" class="modal-btn" style="background:var(--surface);color:var(--danger);border:1px solid var(--border)"><i class="fas fa-trash"></i></button>
+                <button onclick="closeStreamModal()" class="modal-btn" style="background:var(--surface);color:var(--text);border:1px solid var(--border)">Cerrar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overlay de herramientas (notas, calculadora, etc) -->
+    <div id="tool-overlay" class="tool-overlay">
+        <div class="flex items-center justify-between mb-3 flex-shrink-0">
+            <div class="font-digital text-xs font-bold tracking-widest" style="color:var(--accent)" id="tool-overlay-title">HERRAMIENTAS</div>
+            <button onclick="closeToolOverlay()" class="w-8 h-8 rounded-lg flex items-center justify-center" style="background:var(--surface);color:var(--text);border:1px solid var(--border)"><i class="fas fa-times"></i></button>
+        </div>
+        <div class="flex gap-2 mb-3 flex-shrink-0 overflow-x-auto">
+            <button onclick="switchTool('notas')" class="tool-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold" id="tool-tab-notas" style="background:var(--accent);color:#000">Notas</button>
+            <button onclick="switchTool('calc')" class="tool-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold" id="tool-tab-calc" style="background:var(--surface);color:var(--text)">Calculadora</button>
+            <button onclick="switchTool('crono')" class="tool-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold" id="tool-tab-crono" style="background:var(--surface);color:var(--text)">Cronometro</button>
+            <button onclick="switchTool('viajes')" class="tool-tab-btn px-3 py-1.5 rounded-lg text-xs font-bold" id="tool-tab-viajes" style="background:var(--surface);color:var(--text)">Viajes</button>
+        </div>
+        <div class="flex-1 overflow-y-auto min-h-0">
+            <div id="tool-notas" class="tool-content"><textarea id="notas-text" class="note-area w-full" rows="12" placeholder="Notas rapidas..."></textarea><div class="text-right text-xs mt-1" style="color:var(--muted)"><i class="fas fa-save mr-1"></i>Auto-guardado</div></div>
+            <div id="tool-calc" class="tool-content hidden"><div class="max-w-[280px] mx-auto"><div id="calc-display" class="font-digital text-2xl font-bold text-right p-3 rounded-lg mb-2 overflow-hidden" style="background:var(--surface);border:1px solid var(--border);min-height:48px;word-break:break-all">0</div><div class="grid grid-cols-4 gap-1.5"><button class="calc-btn h-12 rounded-lg" style="background:var(--surface);color:var(--danger)" onclick="calcInput('C')">C</button><button class="calc-btn h-12 rounded-lg" style="background:var(--surface);color:var(--text)" onclick="calcInput('±')">±</button><button class="calc-btn h-12 rounded-lg" style="background:var(--surface);color:var(--text)" onclick="calcInput('%')">%</button><button class="calc-btn h-12 rounded-lg" style="background:var(--accent);color:#000" onclick="calcInput('÷')">÷</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('7')">7</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('8')">8</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('9')">9</button><button class="calc-btn h-12 rounded-lg" style="background:var(--accent);color:#000" onclick="calcInput('×')">×</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('4')">4</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('5')">5</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('6')">6</button><button class="calc-btn h-12 rounded-lg" style="background:var(--accent);color:#000" onclick="calcInput('-')">−</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('1')">1</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('2')">2</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('3')">3</button><button class="calc-btn h-12 rounded-lg" style="background:var(--accent);color:#000" onclick="calcInput('+')">+</button><button class="calc-btn h-12 rounded-lg col-span-2" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('0')">0</button><button class="calc-btn h-12 rounded-lg" style="background:var(--card);color:var(--text);border:1px solid var(--border)" onclick="calcInput('.')">.</button><button class="calc-btn h-12 rounded-lg" style="background:var(--accent);color:#000" onclick="calcInput('=')">=</button></div></div></div>
+            <div id="tool-crono" class="tool-content hidden"><div class="text-center"><div id="crono-display" class="font-digital text-4xl font-bold mb-4 neon-text" style="color:var(--accent)">00:00.00</div><div class="flex justify-center gap-3 mb-4"><button id="crono-start-btn" onclick="cronoToggle()" class="w-16 h-16 rounded-full flex items-center justify-center text-xl" style="background:var(--success);color:#000"><i class="fas fa-play"></i></button><button onclick="cronoLap()" class="w-16 h-16 rounded-full flex items-center justify-center text-xl" style="background:var(--surface);color:var(--text);border:1px solid var(--border)"><i class="fas fa-flag"></i></button><button onclick="cronoReset()" class="w-16 h-16 rounded-full flex items-center justify-center text-xl" style="background:var(--surface);color:var(--danger);border:1px solid var(--border)"><i class="fas fa-undo"></i></button></div><div id="crono-laps" class="max-w-[280px] mx-auto space-y-1"></div></div></div>
+            <div id="tool-viajes" class="tool-content hidden"><div class="flex gap-2 mb-3"><input type="text" id="viaje-nota" class="modal-input flex-1" placeholder="Nota del viaje..." onkeydown="if(event.key==='Enter')addViaje()"><button onclick="addViaje()" class="modal-btn" style="background:var(--accent);color:#000"><i class="fas fa-plus"></i></button></div><div id="viajes-count" class="text-xs mb-2" style="color:var(--muted)"></div><div id="viajes-list" class="space-y-2"><div class="text-center py-6 text-sm" style="color:var(--muted)">Sin viajes</div></div></div>
+        </div>
+    </div>
+
+    <!-- ====== DASHBOARD ====== -->
+    <div class="dashboard">
+        <!-- Header -->
+        <header class="dash-header flex items-center justify-between px-3 py-2">
+            <div class="flex items-center gap-3">
+                <div id="clock" class="font-digital text-xl font-bold neon-text" style="color:var(--accent)">00:00:00</div>
+                <div id="date" class="text-xs font-ui" style="color:var(--muted)"></div>
+            </div>
+            <div class="text-center">
+                <div class="font-digital text-[10px] font-bold tracking-[0.25em]" style="color:var(--accent)">RADIOTAXI</div>
+                <div class="font-ui text-[10px] font-bold tracking-wider" style="color:var(--accent2)">AREQUIPA</div>
+            </div>
+            <div class="flex items-center gap-2">
+                <i class="fas fa-volume-high text-xs" style="color:var(--muted)" id="vol-icon"></i>
+                <input type="range" id="volume-slider" min="0" max="100" value="70" class="w-16">
+            </div>
+        </header>
+
+        <!-- Panel MAPA -->
+        <div class="panel panel-map">
+            <div class="panel-header">
+                <span class="panel-title"><i class="fas fa-map-location-dot mr-1"></i> NAVEGACION</span>
+                <div class="flex gap-1">
+                    <button onclick="openExternalMaps()" class="text-xs px-2 py-1 rounded" style="background:var(--surface);color:var(--accent2);border:1px solid var(--border)" title="Abrir Google Maps"><i class="fas fa-external-link-alt"></i></button>
+                    <button onclick="centerMap()" class="text-xs px-2 py-1 rounded" style="background:var(--surface);color:var(--accent);border:1px solid var(--border)" title="Centrar"><i class="fas fa-crosshairs"></i></button>
+                </div>
+            </div>
+            <div class="panel-body" style="padding:0">
+                <div class="absolute top-2 left-2 right-2 z-[1000]">
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-2 top-1/2 -translate-y-1/2 text-xs" style="color:var(--muted)"></i>
+                        <input type="text" id="map-search" class="modal-input h-8 pl-7 text-xs" placeholder="Buscar en Arequipa..." style="background:rgba(5,5,8,0.8);backdrop-filter:blur(8px)">
+                        <div id="search-results" style="position:absolute;top:100%;left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:8px;max-height:160px;overflow-y:auto;z-index:1001;display:none"></div>
+                    </div>
+                </div>
+                <div id="map-container"></div>
+                <div class="absolute bottom-2 left-2 rounded-lg px-2 py-1 text-xs flex items-center gap-1" style="background:rgba(5,5,8,0.8);backdrop-filter:blur(8px);color:var(--muted);border:1px solid var(--border)">
+                    <i class="fas fa-satellite-dish" id="gps-icon" style="color:var(--muted)"></i>
+                    <span id="gps-status">Sin GPS</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel VELOCIMETRO -->
+        <div class="panel panel-speedo">
+            <div class="panel-header"><span class="panel-title"><i class="fas fa-tachometer-alt mr-1"></i> VELOCIMETRO</span><span class="text-xs" style="color:var(--muted)">km/h</span></div>
+            <div class="panel-body flex flex-col items-center justify-center gap-2">
+                <svg width="140" height="140" viewBox="0 0 140 140" class="speedo-svg">
+                    <circle cx="70" cy="70" r="60" class="speed-ring-bg"/>
+                    <!-- Marcas -->
+                    <circle cx="70" cy="70" r="60" class="speed-ring-mark" stroke-dasharray="2 8" transform="rotate(-90 70 70)"/>
+                    <circle cx="70" cy="70" r="55" class="speed-ring-mark" stroke-dasharray="1 15" transform="rotate(-90 70 70)"/>
+                    <!-- Valor -->
+                    <circle cx="70" cy="70" r="60" class="speed-ring-val" id="speed-arc" stroke-dasharray="376.99" stroke-dashoffset="376.99" transform="rotate(-90 70 70)"/>
+                    <text x="70" y="65" text-anchor="middle" fill="var(--accent)" font-family="Orbitron" font-size="36" font-weight="900" id="speed-text">0</text>
+                    <text x="70" y="85" text-anchor="middle" fill="var(--muted)" font-family="Rajdhani" font-size="11" font-weight="600">KM/H</text>
+                </svg>
+                <div class="grid grid-cols-3 gap-2 w-full px-3">
+                    <div class="text-center p-2 rounded-lg" style="background:var(--surface)">
+                        <div class="font-digital text-sm font-bold" style="color:var(--accent2)" id="info-bateria">--</div>
+                        <div class="text-[9px]" style="color:var(--muted)">BATERIA</div>
+                    </div>
+                    <div class="text-center p-2 rounded-lg" style="background:var(--surface)">
+                        <div class="font-digital text-sm font-bold" style="color:var(--accent2)" id="info-viajes">0</div>
+                        <div class="text-[9px]" style="color:var(--muted)">VIAJES</div>
+                    </div>
+                    <div class="text-center p-2 rounded-lg" style="background:var(--surface)">
+                        <div class="font-digital text-sm font-bold" style="color:var(--accent2)" id="info-crono">00:00</div>
+                        <div class="text-[9px]" style="color:var(--muted)">CRONO</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel RADIO -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title"><i class="fas fa-radio mr-1"></i> RADIO FM</span>
+                <div class="flex items-center gap-2">
+                    <span id="stream-live-badge" class="text-[9px] font-bold px-1.5 py-0.5 rounded hidden" style="background:rgba(0,255,136,0.15);color:var(--success)"><i class="fas fa-circle text-[5px] mr-0.5 live-dot"></i>EN VIVO</span>
+                    <span id="stream-searching-badge" class="text-[9px] font-bold px-1.5 py-0.5 rounded hidden" style="background:rgba(0,212,255,0.15);color:var(--accent2)"><i class="fas fa-spinner spin mr-0.5"></i>BUSCANDO</span>
+                    <button id="radio-power" onclick="toggleRadio()" class="w-7 h-7 rounded-full flex items-center justify-center text-xs" style="background:var(--surface);color:var(--muted);border:1px solid var(--border)"><i class="fas fa-power-off"></i></button>
+                </div>
+            </div>
+            <div class="panel-body flex flex-col" id="radio-body">
+                <!-- Frecuencia -->
+                <div class="text-center pt-2 pb-1">
+                    <div class="flex items-center justify-center gap-2 mb-0.5">
+                        <span class="font-digital text-[9px] font-bold px-1.5 py-0.5 rounded" style="background:var(--surface);color:var(--muted)">FM</span>
+                        <span id="station-name" class="text-xs font-bold" style="color:var(--accent);opacity:0">—</span>
+                    </div>
+                    <div id="freq-display" class="freq-display neon-text">88.1</div>
+                    <div class="font-digital text-[9px]" style="color:var(--muted)">MHz</div>
+                </div>
+                <!-- Controles -->
+                <div class="flex items-center justify-center gap-2 py-1">
+                    <button onclick="seekDown()" class="h-8 px-2 rounded text-[10px] font-bold" style="background:var(--surface);color:var(--muted);border:1px solid var(--border)">SEEK <i class="fas fa-backward ml-0.5"></i></button>
+                    <button onclick="tuneDown()" class="w-10 h-10 rounded-lg flex items-center justify-center text-lg" style="background:var(--surface);color:var(--text);border:1px solid var(--border)"><i class="fas fa-chevron-down"></i></button>
+                    <button onclick="tuneUp()" class="w-10 h-10 rounded-lg flex items-center justify-center text-lg" style="background:var(--surface);color:var(--text);border:1px solid var(--border)"><i class="fas fa-chevron-up"></i></button>
+                    <button onclick="seekUp()" class="h-8 px-2 rounded text-[10px] font-bold" style="background:var(--surface);color:var(--muted);border:1px solid var(--border)"><i class="fas fa-forward mr-0.5"></i> SEEK</button>
+                </div>
+                <!-- Presets -->
+                <div class="flex-1 overflow-y-auto px-2 pb-1 min-h-0">
+                    <div class="grid grid-cols-3 gap-1" id="presets-grid"></div>
+                </div>
+                <!-- Espectro mini -->
+                <canvas id="spectrum" class="w-full" style="height:30px;background:var(--surface);border-top:1px solid var(--border)"></canvas>
+            </div>
+        </div>
+
+        <!-- Panel MUSICA -->
+        <div class="panel">
+            <div class="panel-header">
+                <span class="panel-title"><i class="fas fa-music mr-1"></i> MUSICA</span>
+                <label class="text-[9px] font-bold px-2 py-1 rounded cursor-pointer" style="background:var(--accent);color:#000"><i class="fas fa-plus mr-0.5"></i>CARGAR<input type="file" id="music-files" accept="audio/*" multiple class="hidden"></label>
+            </div>
+            <div class="panel-body flex flex-col">
+                <div class="flex items-center gap-2 px-3 pt-2 pb-1 flex-shrink-0">
+                    <div class="w-12 h-12 rounded-lg flex items-center justify-center text-xl flex-shrink-0" style="background:var(--surface);color:var(--muted)" id="album-art"><i class="fas fa-music"></i></div>
+                    <div class="flex-1 min-w-0">
+                        <div id="track-name" class="text-xs font-bold truncate">Sin archivo</div>
+                        <div id="track-info" class="text-[10px]" style="color:var(--muted)">Carga musica</div>
+                    </div>
+                </div>
+                <div class="px-3 flex-shrink-0">
+                    <input type="range" id="progress-bar" min="0" max="1000" value="0" class="w-full">
+                    <div class="flex justify-between font-digital text-[9px] mt-0.5" style="color:var(--muted)"><span id="time-current">0:00</span><span id="time-total">0:00</span></div>
+                </div>
+                <div class="flex items-center justify-center gap-2 py-2 flex-shrink-0">
+                    <button onclick="prevTrack()" class="music-btn music-btn-sec"><i class="fas fa-backward"></i></button>
+                    <button id="play-btn" onclick="togglePlay()" class="music-btn music-btn-main"><i class="fas fa-play" id="play-icon"></i></button>
+                    <button onclick="nextTrack()" class="music-btn music-btn-sec"><i class="fas fa-forward"></i></button>
+                </div>
+                <div class="flex-1 overflow-y-auto min-h-0" style="border-top:1px solid var(--border)">
+                    <div id="playlist"><div class="p-3 text-center text-xs" style="color:var(--muted)">Playlist vacia</div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="dash-footer flex items-center gap-1 px-1 py-1">
+            <button class="tool-btn active" onclick="openToolOverlay('notas')"><i class="fas fa-sticky-note"></i><span>NOTAS</span></button>
+            <button class="tool-btn" onclick="openToolOverlay('calc')"><i class="fas fa-calculator"></i><span>CALC</span></button>
+            <button class="tool-btn" onclick="openToolOverlay('crono')"><i class="fas fa-stopwatch"></i><span>CRONO</span></button>
+            <button class="tool-btn" onclick="openToolOverlay('viajes')"><i class="fas fa-taxi"></i><span>VIAJES</span></button>
+            <div class="flex-1"></div>
+            <button onclick="refreshAllStreams()" class="tool-btn" title="Buscar todos los streams"><i class="fas fa-sync-alt"></i><span>SCAN</span></button>
+            <button onclick="openExternalMaps()" class="tool-btn" title="Abrir Google Maps"><i class="fas fa-map-marked-alt"></i><span>MAPS</span></button>
+        </footer>
+    </div>
+
+<script>
+const $=id=>document.getElementById(id);
+
+/* ====== RADIOS AREQUIPA ====== */
+const RADIOS=[
+    {freq:88.1,name:'Republica',search:['Republica Arequipa']},
+    {freq:89.3,name:'Libertad',search:['Libertad Arequipa']},
+    {freq:91.1,name:'Municipal',search:['Municipal Arequipa']},
+    {freq:92.5,name:'Lider',search:['Lider Arequipa']},
+    {freq:93.1,name:'Melodia',search:['Melodia Arequipa']},
+    {freq:95.3,name:'Qhana',search:['Qhana Arequipa']},
+    {freq:96.1,name:'Panamericana',search:['Panamericana Peru']},
+    {freq:98.3,name:'Cathedral',search:['Cathedral Arequipa']},
+    {freq:100.1,name:'Oxigeno',search:['Oxigeno Arequipa']},
+    {freq:102.5,name:'Tropical',search:['Tropical Arequipa']},
+    {freq:104.3,name:'Continental',search:['Continental Arequipa']},
+    {freq:106.3,name:'La Z',search:['La Z Arequipa']}
+];
+const RB=['https://de1.api.radio-browser.info','https://nl1.api.radio-browser.info','https://at1.api.radio-browser.info'];
+
+/* ====== ESTADO ====== */
+const S={freq:88.1,radioOn:false,vol:70,streamCache:{},musicList:[],musicIdx:-1,musicPlaying:false,gps:{lat:null,lng:null,speed:0,watch:null},crono:{on:false,start:0,elapsed:0,interval:null,laps:[]},calc:{disp:'0',first:null,op:null,wait:false},viajes:[],searchingIdx:-1,streamEditIdx:-1};
+const audio=new Audio();audio.volume=0.7;
+const streamAudio=new Audio();streamAudio.volume=0.7;
+let currentStreamIdx=-1,audioCtx,noiseGain,noiseFilter,masterGain,analyser;
+
+/* ====== RELOJ ====== */
+function updateClock(){const n=new Date();$('clock').textContent=n.toLocaleTimeString('es-AR',{hour12:false});$('date').textContent=n.toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'}).toUpperCase();}
+setInterval(updateClock,1000);updateClock();
+
+/* ====== BATERIA ====== */
+async function updateBattery(){try{const b=await navigator.getBattery();$('info-bateria').textContent=Math.round(b.level*100)+'%';b.addEventListener('levelchange',()=>$('info-bateria').textContent=Math.round(b.level*100)+'%');}catch(e){$('info-bateria').textContent='N/A';}}
+updateBattery();
+
+/* ====== VOLUMEN ====== */
+function setVolume(v){S.vol=parseInt(v);audio.volume=S.vol/100;streamAudio.volume=S.vol/100;if(masterGain)masterGain.gain.setTargetAtTime(S.vol/100,audioCtx.currentTime,0.05);const i=$('vol-icon');i.className=S.vol===0?'fas fa-volume-xmark text-xs':S.vol<40?'fas fa-volume-low text-xs':'fas fa-volume-high text-xs';localStorage.setItem('rt_vol',S.vol);}
+ $('volume-slider').addEventListener('input',function(){setVolume(this.value);});
+const sv=localStorage.getItem('rt_vol');if(sv){$('volume-slider').value=sv;setVolume(sv);}
+
+/* ====== AUDIO CONTEXT ====== */
+function initAudio(){
+    if(audioCtx)return;audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    analyser=audioCtx.createAnalyser();analyser.fftSize=64;analyser.smoothingTimeConstant=0.8;
+    masterGain=audioCtx.createGain();masterGain.gain.value=S.vol/100;
+    masterGain.connect(analyser);analyser.connect(audioCtx.destination);
+    const len=audioCtx.sampleRate*2,buf=audioCtx.createBuffer(1,len,audioCtx.sampleRate),d=buf.getChannelData(0);
+    for(let i=0;i<len;i++)d[i]=Math.random()*2-1;
+    const ns=audioCtx.createBufferSource();ns.buffer=buf;ns.loop=true;
+    noiseFilter=audioCtx.createBiquadFilter();noiseFilter.type='bandpass';noiseFilter.frequency.value=800;noiseFilter.Q.value=0.5;
+    noiseGain=audioCtx.createGain();noiseGain.gain.value=0;
+    ns.connect(noiseFilter);noiseFilter.connect(noiseGain);noiseGain.connect(masterGain);ns.start();initSpectrum();
+}
+function muteNoise(){if(noiseGain)noiseGain.gain.setTargetAtTime(0,audioCtx.currentTime,0.05);}
+
+/* ====== STREAM ====== */
+function playStream(url,idx){stopStream();if(!url)return;streamAudio.src=url;streamAudio.volume=S.vol/100;$('stream-live-badge').classList.remove('hidden');$('stream-searching-badge').classList.add('hidden');streamAudio.play().then(()=>{currentStreamIdx=idx;muteNoise();S.streamCache[RADIOS[idx].name]={url,ok:true};saveSC();updateDot(idx,'ok');}).catch(()=>{$('stream-live-badge').classList.add('hidden');$('stream-searching-badge').classList.add('hidden');showToast('Error de stream');currentStreamIdx=-1;updateDot(idx,'none');updateRadioNoise();});}
+function stopStream(){if(currentStreamIdx>=0){streamAudio.pause();streamAudio.src='';currentStreamIdx=-1;}$('stream-live-badge').classList.add('hidden');$('stream-searching-badge').classList.add('hidden');}
+streamAudio.addEventListener('error',()=>{if(currentStreamIdx>=0){showToast('Stream perdido');const i=currentStreamIdx;currentStreamIdx=-1;$('stream-live-badge').classList.add('hidden');updateDot(i,'none');if(S.radioOn)updateRadioNoise();}});
+
+/* ====== BUSQUEDA AUTO ====== */
+async function autoSearch(idx){
+    const r=RADIOS[idx];S.searchingIdx=idx;updateDot(idx,'searching');$('stream-searching-badge').classList.remove('hidden');
+    const c=S.streamCache[r.name];if(c&&c.url&&c.ok){if(S.searchingIdx===idx)updateDot(idx,'ok');S.searchingIdx=-1;return c.url;}
+    for(const term of r.search){for(const srv of RB){try{const resp=await fetch(srv+'/json/stations/search?name='+encodeURIComponent(term)+'&country=Peru&limit=5&order=clickcount&reverse=true',{signal:AbortSignal.timeout(5000)});if(!resp.ok)continue;const st=await resp.json();const g=st.find(s=>s.url_resolved&&s.url_resolved.startsWith('http'));if(g){S.streamCache[r.name]={url:g.url_resolved,ok:true};saveSC();if(S.searchingIdx===idx)updateDot(idx,'ok');S.searchingIdx=-1;return g.url_resolved;}}catch(e){continue;}}}
+    if(S.searchingIdx===idx)updateDot(idx,'none');S.searchingIdx=-1;$('stream-searching-badge').classList.add('hidden');return null;
+}
+async function refreshAllStreams(){showToast('Escaneando radios...');for(let i=0;i<RADIOS.length;i++){updateDot(i,'searching');await autoSearch(i);await new Promise(r=>setTimeout(r,200));}showToast('Escaneo completado');const ci=RADIOS.findIndex(r=>Math.abs(r.freq-S.freq)<0.05);if(ci>=0){const c=S.streamCache[RADIOS[ci].name];if(c&&c.url&&c.ok)playStream(c.url,ci);else updateRadioNoise();}}
+
+/* ====== RADIO ====== */
+function toggleRadio(){initAudio();if(audioCtx.state==='suspended')audioCtx.resume();S.radioOn=!S.radioOn;const b=$('radio-power');if(S.radioOn){b.style.background='var(--accent)';b.style.color='#000';b.classList.add('pulse-glow');$('radio-body').classList.remove('radio-off');autoTune();}else{b.style.background='var(--surface)';b.style.color='var(--muted)';b.classList.remove('pulse-glow');$('radio-body').classList.add('radio-off');stopStream();muteNoise();$('station-name').style.opacity='0';}}
+function autoTune(){const i=RADIOS.findIndex(r=>Math.abs(r.freq-S.freq)<0.05);if(i>=0){const c=S.streamCache[RADIOS[i].name];if(c&&c.url&&c.ok){playStream(c.url,i);return;}autoSearch(i).then(u=>{if(u&&S.radioOn&&Math.abs(RADIOS[i].freq-S.freq)<0.05)playStream(u,i);else if(S.radioOn)updateRadioNoise();});}}
+function tuneUp(){if(!S.radioOn)return;S.freq=Math.min(108,+(S.freq+0.1).toFixed(1));$('freq-display').textContent=S.freq.toFixed(1);stopStream();updateRadioNoise();}
+function tuneDown(){if(!S.radioOn)return;S.freq=Math.max(88,+(S.freq-0.1).toFixed(1));$('freq-display').textContent=S.freq.toFixed(1);stopStream();updateRadioNoise();}
+function seekUp(){if(!S.radioOn)return;let b=108.1,d=999;RADIOS.forEach(r=>{if(r.freq>S.freq){const x=r.freq-S.freq;if(x<d){d=x;b=r.freq;}}});if(b>108)b=RADIOS[0].freq;S.freq=b;$('freq-display').textContent=S.freq.toFixed(1);stopStream();autoTune();}
+function seekDown(){if(!S.radioOn)return;let b=87.9,d=999;RADIOS.forEach(r=>{if(r.freq<S.freq){const x=S.freq-r.freq;if(x<d){d=x;b=r.freq;}}});if(b<88)b=RADIOS[RADIOS.length-1].freq;S.freq=b;$('freq-display').textContent=S.freq.toFixed(1);stopStream();autoTune();}
+function updateRadioNoise(){if(!audioCtx||!S.radioOn||currentStreamIdx>=0)return;let md=Infinity;RADIOS.forEach(r=>{md=Math.min(md,Math.abs(S.freq-r.freq));});if(md<0.3){noiseGain.gain.setTargetAtTime(0.05*(1-(1-md/0.3)*0.8),audioCtx.currentTime,0.08);const i=RADIOS.findIndex(r=>Math.abs(r.freq-S.freq)<0.05);if(i>=0){$('station-name').textContent=RADIOS[i].name;$('station-name').style.opacity='1';}}else{noiseGain.gain.setTargetAtTime(0.15,audioCtx.currentTime,0.08);$('station-name').style.opacity='0';}noiseFilter.frequency.setTargetAtTime(300+(S.freq-88)*50,audioCtx.currentTime,0.1);updatePresetHL();}
+
+/* ====== PRESETS ====== */
+function updateDot(i,st){const d=$('dot-'+i);if(!d)return;d.className='stream-dot '+(st==='ok'?'dot-ok':st==='searching'?'dot-searching':'dot-none');d.innerHTML=st==='ok'?'<i class="fas fa-check"></i>':st==='searching'?'<i class="fas fa-spinner spin"></i>':'';}
+function getDotStatus(i){const c=S.streamCache[RADIOS[i].name];return c&&c.url&&c.ok?'ok':'none';}
+function buildPresets(){const g=$('presets-grid');g.innerHTML='';RADIOS.forEach((r,i)=>{const btn=document.createElement('button');btn.className='preset-btn';btn.id='preset-'+i;const st=getDotStatus(i);btn.innerHTML='<span class="stream-dot '+(st==='ok'?'dot-ok':'dot-none')+'" id="dot-'+i+'">'+(st==='ok'?'<i class="fas fa-check"></i>':'')+'</span><span class="block text-[10px] font-digital font-bold opacity-60">'+r.freq.toFixed(1)+'</span><span class="p-name block text-[9px] font-ui font-semibold truncate" style="color:var(--accent2)">'+r.name+'</span>';let timer,lp=false;const dn=()=>{lp=false;timer=setTimeout(()=>{lp=true;},700);};const up=()=>clearTimeout(timer);btn.addEventListener('click',()=>{if(lp){lp=false;return;}if(!S.radioOn){showToast('Encende la radio');return;}S.freq=r.freq;$('freq-display').textContent=r.freq.toFixed(1);stopStream();const c=S.streamCache[r.name];if(c&&c.url&&c.ok){playStream(c.url,i);}else{autoSearch(i).then(u=>{if(u&&S.radioOn&&Math.abs(r.freq-S.freq)<0.05)playStream(u,i);else if(S.radioOn)updateRadioNoise();});}updatePresetHL();});btn.addEventListener('mousedown',dn);btn.addEventListener('mouseup',up);btn.addEventListener('mouseleave',up);btn.addEventListener('touchstart',e=>{e.preventDefault();dn();},{passive:false});btn.addEventListener('touchend',up);btn.addEventListener('touchcancel',up);btn.addEventListener('dblclick',e=>{e.preventDefault();openStreamModal(i);});g.appendChild(btn);});}
+function updatePresetHL(){RADIOS.forEach((r,i)=>{const b=$('preset-'+i);if(b)b.classList.toggle('active-preset',Math.abs(r.freq-S.freq)<0.05);});}
+
+/* ====== STREAM CACHE ====== */
+function saveSC(){localStorage.setItem('rt_sc',JSON.stringify(S.streamCache));}
+function loadSC(){const s=localStorage.getItem('rt_sc');if(s)try{S.streamCache=JSON.parse(s);}catch(e){S.streamCache={};}}
+
+/* ====== MODAL STREAM ====== */
+function openStreamModal(i){if(i<0)i=0;S.streamEditIdx=i;$('modal-freq').textContent=RADIOS[i].freq.toFixed(1)+' MHz - '+RADIOS[i].name;$('stream-url-input').value=S.streamCache[RADIOS[i].name]?.url||'';$('stream-modal').style.display='flex';}
+function closeStreamModal(){$('stream-modal').style.display='none';}
+function saveManualStream(){const u=$('stream-url-input').value.trim();if(!u){showToast('Pega una URL');return;}S.streamCache[RADIOS[S.streamEditIdx].name]={url:u,ok:true};saveSC();buildPresets();closeStreamModal();showToast('Stream guardado');}
+function deleteStreamUrl(){delete S.streamCache[RADIOS[S.streamEditIdx].name];if(currentStreamIdx===S.streamEditIdx)stopStream();saveSC();buildPresets();closeStreamModal();}
+ $('stream-modal').addEventListener('click',e=>{if(e.target===$('stream-modal'))closeStreamModal();});
+
+/* ====== ESPECTRO ====== */
+function initSpectrum(){const cv=$('spectrum'),cx=cv.getContext('2d'),bl=analyser.frequencyBinCount,data=new Uint8Array(bl);function draw(){requestAnimationFrame(draw);const w=cv.width=cv.offsetWidth*2,h=cv.height=cv.offsetHeight*2;cx.clearRect(0,0,w,h);analyser.getByteFrequencyData(data);const bw=w/bl;for(let i=0;i<bl;i++){const v=S.radioOn?data[i]/255:0,bh=v*h*0.9;cx.fillStyle='var(--accent)';cx.globalAlpha=0.5+v*0.5;cx.fillRect(i*bw,h-bh,Math.max(1,bw-1),bh);}cx.globalAlpha=1;}draw();}
+
+/* Deslizar freq */
+(function(){const el=$('freq-display');let sy;el.addEventListener('touchstart',e=>{sy=e.touches[0].clientY;},{passive:true});el.addEventListener('touchmove',e=>{if(!sy||!S.radioOn)return;const d=sy-e.touches[0].clientY;if(Math.abs(d)>15){d>0?tuneUp():tuneDown();sy=e.touches[0].clientY;}},{passive:true});el.addEventListener('touchend',()=>{sy=null;},{passive:true});})();
+
+/* ====== MUSICA ====== */
+ $('music-files').addEventListener('change',function(e){Array.from(e.target.files).forEach(f=>{S.musicList.push({name:f.name.replace(/\.[^.]+$/,''),url:URL.createObjectURL(f)});});renderPL();if(S.musicIdx===-1){S.musicIdx=0;loadTrack();}showToast(e.target.files.length+' archivo(s)');});
+function renderPL(){const el=$('playlist');if(!S.musicList.length){el.innerHTML='<div class="p-3 text-center text-xs" style="color:var(--muted)">Playlist vacia</div>';return;}el.innerHTML=S.musicList.map((t,i)=>'<div class="playlist-item '+(i===S.musicIdx?'active-track':'')+'" onclick="playTrack('+i+')"><span class="font-digital text-[10px] w-4 text-center" style="color:var(--muted)">'+(i===S.musicIdx&&S.musicPlaying?'<i class="fas fa-volume-high" style="color:var(--accent)"></i>':(i+1))+'</span><span class="truncate flex-1 text-xs">'+t.name+'</span><button onclick="event.stopPropagation();rmTrack('+i+')" style="color:var(--muted);background:none;border:none;cursor:pointer"><i class="fas fa-times text-[10px]"></i></button></div>').join('');}
+function loadTrack(){if(S.musicIdx<0||S.musicIdx>=S.musicList.length)return;const t=S.musicList[S.musicIdx];audio.src=t.url;$('track-name').textContent=t.name;$('track-info').textContent=(S.musicIdx+1)+'/'+S.musicList.length;renderPL();}
+function playTrack(i){S.musicIdx=i;loadTrack();stopStream();audio.play().catch(()=>{});S.musicPlaying=true;updatePlayBtn();}
+function togglePlay(){if(!S.musicList.length)return;if(S.musicIdx===-1){S.musicIdx=0;loadTrack();}stopStream();if(S.musicPlaying)audio.pause();else audio.play().catch(()=>{});S.musicPlaying=!S.musicPlaying;updatePlayBtn();}
+function nextTrack(){if(!S.musicList.length)return;S.musicIdx=(S.musicIdx+1)%S.musicList.length;loadTrack();if(S.musicPlaying)audio.play().catch(()=>{});updatePlayBtn();}
+function prevTrack(){if(!S.musicList.length)return;if(audio.currentTime>3){audio.currentTime=0;return;}S.musicIdx=(S.musicIdx-1+S.musicList.length)%S.musicList.length;loadTrack();if(S.musicPlaying)audio.play().catch(()=>{});updatePlayBtn();}
+function rmTrack(i){URL.revokeObjectURL(S.musicList[i].url);S.musicList.splice(i,1);if(i===S.musicIdx){if(S.musicList.length){S.musicIdx=Math.min(i,S.musicList.length-1);loadTrack();if(S.musicPlaying)audio.play().catch(()=>{});}else{S.musicIdx=-1;S.musicPlaying=false;$('track-name').textContent='Sin archivo';$('track-info').textContent='Carga musica';audio.src='';}}else if(i<S.musicIdx)S.musicIdx--;renderPL();updatePlayBtn();}
+function updatePlayBtn(){const ic=S.musicPlaying?'fa-pause':'fa-play';$('play-icon').className='fas '+ic;}
+audio.addEventListener('ended',nextTrack);
+audio.addEventListener('timeupdate',()=>{if(!audio.duration)return;$('progress-bar').value=(audio.currentTime/audio.duration)*1000;$('time-current').textContent=fmtT(audio.currentTime);$('time-total').textContent=fmtT(audio.duration);});
+ $('progress-bar').addEventListener('input',function(){if(audio.duration)audio.currentTime=(this.value/1000)*audio.duration;});
+function fmtT(s){return Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');}
+
+/* ====== MAPA ====== */
+let map,dkT,ltT,uM,sM;
+function initMap(){dkT=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:19});ltT=L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{maxZoom:19});map=L.map('map-container',{layers:[dkT],zoomControl:false});L.control.zoom({position:'bottomright'}).addTo(map);map.setView([-16.4090,-71.5375],13);if('geolocation' in navigator)navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],15);},()=>{},{enableHighAccuracy:true,timeout:5000});}
+function startGPS(){if(!('geolocation' in navigator))return;if(S.gps.watch)navigator.geolocation.clearWatch(S.gps.watch);S.gps.watch=navigator.geolocation.watchPosition(p=>{S.gps.lat=p.coords.latitude;S.gps.lng=p.coords.longitude;S.gps.speed=p.coords.speed?Math.round(p.coords.speed*3.6):0;if(!uM){uM=L.circleMarker([S.gps.lat,S.gps.lng],{radius:7,fillColor:'var(--accent)',fillOpacity:1,color:'#fff',weight:2}).addTo(map);map.setView([S.gps.lat,S.gps.lng],15);}else uM.setLatLng([S.gps.lat,S.gps.lng]);$('speed-text').textContent=S.gps.speed;$('speed-arc').style.strokeDashoffset=376.99-(Math.min(S.gps.speed,120)/120)*376.99;$('gps-icon').style.color='var(--success)';$('gps-status').textContent='GPS OK';$('gps-status').style.color='var(--success)';},()=>{$('gps-icon').style.color='var(--danger)';$('gps-status').textContent='Sin GPS';$('gps-status').style.color='var(--danger)';},{enableHighAccuracy:true,maximumAge:1000});}
+function centerMap(){if(S.gps.lat)map.setView([S.gps.lat,S.gps.lng],16,{animate:true});else if('geolocation' in navigator)navigator.geolocation.getCurrentPosition(p=>{map.setView([p.coords.latitude,p.coords.longitude],16);},()=>showToast('Sin GPS'),{enableHighAccuracy:true});}
+function openExternalMaps(){if(S.gps.lat){window.open('https://www.google.com/maps/@'+S.gps.lat+','+S.gps.lng+',16z','_blank');}else{window.open('https://www.google.com/maps/@-16.4090,-71.5375,13z','_blank');}}
+let sTO;
+ $('map-search').addEventListener('input',function(){clearTimeout(sTO);const q=this.value.trim();if(q.length<3){$('search-results').style.display='none';return;}sTO=setTimeout(()=>doSearch(q),500);});
+ $('map-search').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();const q=this.value.trim();if(q.length>=3)doSearch(q);}});
+async function doSearch(q){try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&q='+encodeURIComponent(q+' Arequipa')+'&limit=5&accept-language=es');const d=await r.json();const el=$('search-results');if(!d.length){el.innerHTML='<div class="px-3 py-2 text-xs" style="color:var(--muted)">Sin resultados</div>';el.style.display='block';return;}el.innerHTML=d.map(r=>'<div class="px-3 py-2 text-xs cursor-pointer" style="border-bottom:1px solid var(--border)" onclick="goRes('+r.lat+','+r.lon+',this)" data-n=\''+r.display_name.replace(/'/g,"&#39;")+'\'>'+r.display_name+'</div>').join('');el.style.display='block';}catch(e){}}
+function goRes(lat,lon,el){$('search-results').style.display='none';if(sM)map.removeLayer(sM);sM=L.marker([lat,lon]).addTo(map).bindPopup(el.dataset.n||'').openPopup();map.setView([lat,lon],16,{animate:true});}
+document.addEventListener('click',e=>{if(!e.target.closest('#map-search')&&!e.target.closest('#search-results'))$('search-results').style.display='none';});
+
+/* ====== HERRAMIENTAS OVERLAY ====== */
+function openToolOverlay(tool){$('tool-overlay').classList.add('visible');switchTool(tool);updateCronoDisplay();}
+function closeToolOverlay(){$('tool-overlay').classList.remove('visible');}
+function switchTool(t){document.querySelectorAll('.tool-content').forEach(e=>e.classList.add('hidden'));$('tool-'+t).classList.remove('hidden');document.querySelectorAll('.tool-tab-btn').forEach(b=>{b.style.background='var(--surface)';b.style.color='var(--text)';});$('tool-tab-'+t).style.background='var(--accent)';$('tool-tab-'+t).style.color='#000';}
+ $('notas-text').value=localStorage.getItem('rt_notas')||'';$('notas-text').addEventListener('input',()=>localStorage.setItem('rt_notas',$('notas-text').value));
+function calcInput(v){const c=S.calc;if(v==='C'){c.disp='0';c.first=null;c.op=null;c.wait=false;}else if(v==='±'){c.disp=String(-parseFloat(c.disp));}else if(v==='%'){c.disp=String(parseFloat(c.disp)/100);}else if(['+','-','×','÷'].includes(v)){if(c.first!==null&&!c.wait)c.disp=String(calcDo(c.first,parseFloat(c.disp),c.op));c.first=parseFloat(c.disp);c.op=v;c.wait=true;}else if(v==='='){if(c.first!==null&&c.op){c.disp=String(calcDo(c.first,parseFloat(c.disp),c.op));c.first=null;c.op=null;c.wait=false;}}else{if(c.wait){c.disp=v==='.'?'0.':v;c.wait=false;}else{if(v==='.'&&c.disp.includes('.'))return;c.disp=c.disp==='0'&&v!=='.'?v:c.disp+v;}}$('calc-display').textContent=c.disp;}
+function calcDo(a,b,op){switch(op){case'+':return+(a+b).toFixed(10);case'-':return+(a-b).toFixed(10);case'×':return+(a*b).toFixed(10);case'÷':return b!==0?+(a/b).toFixed(10):'Error';}return b;}
+function cronoToggle(){if(S.crono.on){clearInterval(S.crono.interval);S.crono.elapsed+=Date.now()-S.crono.start;S.crono.on=false;$('crono-start-btn').innerHTML='<i class="fas fa-play"></i>';$('crono-start-btn').style.background='var(--success)';}else{S.crono.start=Date.now();S.crono.on=true;S.crono.interval=setInterval(updateCronoDisplay,100);$('crono-start-btn').innerHTML='<i class="fas fa-pause"></i>';$('crono-start-btn').style.background='var(--accent)';}}
+function cronoLap(){if(!S.crono.on)return;S.crono.laps.push(S.crono.elapsed+Date.now()-S.crono.start);$('crono-laps').innerHTML=S.crono.laps.map((l,i)=>'<div class="flex justify-between px-3 py-1.5 rounded text-xs" style="background:var(--surface)"><span style="color:var(--muted)">Vuelta '+(i+1)+'</span><span class="font-digital" style="color:var(--accent)">'+fmtC(l)+'</span></div>').reverse().join('');}
+function cronoReset(){clearInterval(S.crono.interval);S.crono.on=false;S.crono.elapsed=0;S.crono.laps=[];$('crono-display').textContent='00:00.00';$('crono-start-btn').innerHTML='<i class="fas fa-play"></i>';$('crono-start-btn').style.background='var(--success)';$('crono-laps').innerHTML='';$('info-crono').textContent='00:00';}
+function updateCronoDisplay(){const t=S.crono.elapsed+(S.crono.on?Date.now()-S.crono.start:0);$('crono-display').textContent=fmtC(t);$('info-crono').textContent=fmtC(t).substring(0,5);}
+function fmtC(ms){return String(Math.floor(ms/60000)).padStart(2,'0')+':'+String(Math.floor((ms%60000)/1000)).padStart(2,'0')+'.'+String(Math.floor((ms%1000)/10)).padStart(2,'0');}
+function loadViajes(){const s=localStorage.getItem('rt_v');if(s)try{S.viajes=JSON.parse(s);}catch(e){S.viajes=[];}S.viajes=S.viajes.filter(v=>new Date(v.date).toDateString()===new Date().toDateString());renderViajes();$('info-viajes').textContent=S.viajes.length;}
+function addViaje(){const n=$('viaje-nota').value.trim();if(!n){showToast('Escribi una nota');return;}S.viajes.push({date:new Date().toISOString(),nota:n,crono:S.crono.on?fmtC(S.crono.elapsed+Date.now()-S.crono.start):null});$('viaje-nota').value='';localStorage.setItem('rt_v',JSON.stringify(S.viajes));renderViajes();showToast('Viaje registrado');}
+function removeViaje(i){S.viajes.splice(i,1);localStorage.setItem('rt_v',JSON.stringify(S.viajes));renderViajes();}
+function renderViajes(){const el=$('viajes-list');$('viajes-count').textContent=S.viajes.length?S.viajes.length+' viaje(s) hoy':'';$('info-viajes').textContent=S.viajes.length;if(!S.viajes.length){el.innerHTML='<div class="text-center py-6 text-xs" style="color:var(--muted)">Sin viajes</div>';return;}el.innerHTML=S.viajes.map((v,i)=>'<div class="flex justify-between items-start p-2 rounded-lg" style="background:var(--surface);border:1px solid var(--border)"><div><div class="text-xs font-bold">'+v.nota+'</div><div class="text-[10px]" style="color:var(--muted)"><i class="fas fa-clock mr-0.5"></i>'+new Date(v.date).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})+(v.crono?' <i class="fas fa-stopwatch mr-0.5"></i>'+v.crono:'')+'</div></div><button onclick="removeViaje('+i+')" style="color:var(--muted);background:none;border:none;cursor:pointer"><i class="fas fa-times text-xs"></i></button></div>').join('');}
+
+/* ====== TOAST ====== */
+let tT;function showToast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('show'),2000);}
+
+/* ====== INIT ====== */
+loadSC();buildPresets();$('freq-display').textContent=S.freq.toFixed(1);initMap();startGPS();loadViajes();
+</script>
+</body>
+</html>
